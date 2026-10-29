@@ -19,6 +19,17 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt
+
+      # Verify that Supabase is configured
+      - name: Verify PostgreSQL configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [[ "$DATABASE_URL" != postgresql://* && "$DATABASE_URL" != postgres://* ]]; then
+            echo "::error::DATABASE_URL is missing or invalid"
+            exit 1
+          fi
+      
       - run: python sync_all.py --hevy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
