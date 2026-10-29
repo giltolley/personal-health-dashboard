@@ -5,6 +5,16 @@ on:
     - cron: '43 3 * * *'
       timezone: 'America/New_York'
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Import mode'
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - force
+          - normal
 
 permissions:
   contents: read
@@ -38,8 +48,16 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
-      - name: Check Health Connect ZIP and import if updated
-        run: python sync_health_connect_drive.py
+      - name: Preview or import Health Connect ZIP
         env:
           GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RUN_MODE: ${{ inputs.operation || 'normal' }}
+        shell: bash
+        run: |
+          case "$RUN_MODE" in
+            preview) python sync_health_connect_drive.py --preview ;;
+            force) python sync_health_connect_drive.py --force ;;
+            normal) python sync_health_connect_drive.py ;;
+            *) echo 'Unsupported operation'; exit 1 ;;
+          esac
