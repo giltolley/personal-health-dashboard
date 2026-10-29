@@ -1,0 +1,45 @@
+name: Health Connect Drive scheduled sync
+
+on:
+  schedule:
+    - cron: '43 3 * * *'
+      timezone: 'America/New_York'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: health-dashboard-health-connect-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-health-connect.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-health-connect.txt
+
+      - name: Authenticate as folder-scoped Drive reader
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Check Health Connect ZIP and import if updated
+        run: python sync_health_connect_drive.py
+        env:
+          GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
