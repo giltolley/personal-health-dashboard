@@ -1,0 +1,30 @@
+name: Validate dashboard analytics
+
+on:
+  pull_request:
+    paths:
+      - 'insights_v06.py'
+      - 'test_insights_v06.py'
+      - 'app.py'
+      - 'requirements.txt'
+      - '.github/workflows/test-analytics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Compile dashboard
+        run: python -m py_compile app.py insights_v06.py
+      - name: Run pure analytics regression tests
+        run: python -m unittest -v test_insights_v06
