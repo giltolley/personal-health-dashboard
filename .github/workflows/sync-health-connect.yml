@@ -39,7 +39,7 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Check Health Connect ZIP and import if updated
-        run: python sync_health_connect_drive.py
+        run: python sync_health_connect_drive.py --check-only
         env:
           GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
