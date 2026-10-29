@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Health data and exports
+*.zip
+*.csv
+garmin_test_output/
+data/
+backups/
+
+# Operating system files
+.DS_Store
+Thumbs.db
