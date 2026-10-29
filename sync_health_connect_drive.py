@@ -103,6 +103,8 @@ def main():
                         help="Verify Drive access and identify latest ZIP; no download or DB writes")
     parser.add_argument("--force", action="store_true",
                         help="Reprocess even if this ZIP revision was already imported")
+    parser.add_argument("--preview", action="store_true",
+                        help="Download ZIP and report nutrition reconciliation without any DB writes")
     args = parser.parse_args()
 
     db_url = os.getenv("DATABASE_URL", "").strip()
@@ -119,16 +121,20 @@ def main():
 
     db = connect(url=db_url)
     try:
-        ensure_schema(db)
+        if not args.preview:
+            ensure_schema(db)
         marker = fingerprint(latest)
-        if previously_imported(db, marker) and not args.force:
+        if previously_imported(db, marker) and not (args.force or args.preview):
             print("Unchanged Drive export; skipping download and import.")
             return
         with tempfile.TemporaryDirectory(prefix="health_connect_") as temp_dir:
             filename = Path(temp_dir) / "Health Connect.zip"
             download_and_verify(client, latest, filename)
-            # Existing v0.4 importers perform idempotent UPSERTs into PostgreSQL.
-            nutrition, weights = import_health_zip(db, filename)
+            # Preview returns before any INSERT, UPDATE or DELETE, including markers.
+            nutrition, weights = import_health_zip(db, filename, preview_only=args.preview)
+            if args.preview:
+                print("Preview complete. No database records or import markers were changed.")
+                return
             extra = import_health_extras(db, filename)
         total = nutrition + weights + extra["body_fat"] + extra["blood_pressure"]
         # Only successful imports receive the marker, permitting safe retries.
