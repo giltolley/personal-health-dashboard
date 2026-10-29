@@ -122,7 +122,7 @@ def training_by_week(sets, workouts, start, end):
     return data
 
 
-def source_freshness(log, now=None):
+def source_freshness(log, now=None, hevy_last_success=None):
     """Track last successful ingestion, distinct from latest measurement date."""
     now = now if now is not None else pd.Timestamp.now(tz="UTC")
     now = pd.Timestamp(now)
@@ -131,6 +131,14 @@ def source_freshness(log, now=None):
     rules = [("Garmin API", 12), ("Hevy API", 36), ("Health Connect Drive", 48)]
     result = []
     for source, threshold in rules:
+        if source == "Hevy API" and hevy_last_success:
+            last = pd.to_datetime(hevy_last_success, utc=True, errors="coerce")
+            if pd.notna(last):
+                age = max(0.0, (now - last).total_seconds() / 3600)
+                result.append({"Source": source, "Last success (UTC)": last.strftime("%Y-%m-%d %H:%M"),
+                               "Hours since": round(age, 1), "Alert after (h)": threshold,
+                               "Status": "Stale" if age > threshold else "Recent"})
+                continue
         subset = log[log["source"].eq(source) & log["status"].eq("ok")].copy() if log is not None and not log.empty else pd.DataFrame()
         if subset.empty:
             result.append({"Source": source, "Last success (UTC)": "—", "Hours since": np.nan, "Alert after (h)": threshold, "Status": "Unknown"})
@@ -151,7 +159,7 @@ def _fmt(value, precision=0):
     return f"{value:,.{precision}f}" if pd.notna(value) else "—"
 
 
-def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start, end, today):
+def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start, end, today, hevy_last_success=None):
     """Add focused decision-support panels without altering the established pages."""
     st.subheader("Insights · v0.6")
     st.caption("Exploratory comparisons across logged nutrition, Renpho, Garmin and Hevy. No data is modified.")
@@ -306,7 +314,7 @@ def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start,
 
     with quality_tab:
         st.markdown("#### Automated synchronization and data quality")
-        freshness = source_freshness(log)
+        freshness = source_freshness(log, hevy_last_success=hevy_last_success)
         st.dataframe(freshness, use_container_width=True, hide_index=True)
         if freshness["Status"].eq("Stale").any():
             st.warning("One or more scheduled sources have not reported a successful import within the monitoring threshold.")
