@@ -1,0 +1,25 @@
+name: Hevy scheduled sync
+on:
+  schedule:
+    - cron: '31 10 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: health-dashboard-hevy-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python sync_all.py --hevy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HEVY_API_KEY: ${{ secrets.HEVY_API_KEY }}
