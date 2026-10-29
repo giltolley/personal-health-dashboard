@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from importer import initialize, import_health_zip, import_backfill_csv, read_daily, read_weight
 from datastore import read_frame
+from insights_v06 import render_insights
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -160,7 +161,7 @@ if start>end:st.error('Start date must be before end date.');st.stop()
 def f(df):return filtered(df,start,end)
 nd=f(daily);g=f(garmin);w=f(weight.to_frame());hrv=g if not g.empty else pd.DataFrame()
 
-pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality'])
+pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality','Insights v0.6'])
 with pages[0]:
     st.subheader('At a glance')
     last30_start=max(start,end-timedelta(days=29))
@@ -326,3 +327,8 @@ with pages[6]:
     if not log.empty:st.dataframe(log,use_container_width=True,hide_index=True)
     else:st.info('No Garmin imports yet.')
     st.caption('Nutrition backfills only fill absent dates; when Health Connect records exist, they take precedence. Run an explicit date reconciliation before using calorie balance for clinical decisions.')
+
+
+with pages[7]:
+    insight_log=sql('SELECT run_id,started_at,source,dataset,record_count,status,error_type FROM ingestion_log ORDER BY run_id DESC LIMIT 1000')
+    render_insights(daily,weight,garmin,hevy_sets,hevy_workouts,insight_log,start,end,TODAY)
