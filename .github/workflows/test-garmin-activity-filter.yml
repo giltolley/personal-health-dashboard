@@ -1,0 +1,26 @@
+name: Validate Garmin activity filtering
+
+on:
+  pull_request:
+    paths:
+      - 'garmin_importer.py'
+      - 'test_garmin_activity_filter.py'
+      - '.github/workflows/test-garmin-activity-filter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python syntax
+        run: python -m py_compile garmin_importer.py test_garmin_activity_filter.py
+      - name: Test filtering and reimport behavior
+        run: python -m unittest -v test_garmin_activity_filter

@@ -118,6 +118,12 @@ def import_dataset(db,name,data,source='Garmin JSON',start=None,end=None):
                   body_battery_charged=numeric(r.get('charged')),
                   body_battery_drained=numeric(r.get('drained')))
             elif name=='activities':
+                # MyFitnessPal activities are imported/synthesized duplicates of
+                # Garmin or other step data. They are not real workout sessions
+                # for the dashboard; keep them out on every sync and ZIP import.
+                activity_name=r.get('activityName')
+                if isinstance(activity_name,str) and 'myfitnesspal' in activity_name.casefold():
+                    continue
                 act_id=r.get('activityId')
                 dt=meaningful_date(r.get('startTimeLocal'))
                 if act_id is None or not dt:continue
