@@ -6,6 +6,7 @@ All estimates are exploratory; wearable expenditure is not measured TDEE.
 from __future__ import annotations
 
 from datetime import date, timedelta
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -152,7 +153,7 @@ def _fmt(value, precision=0):
 
 def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start, end, today, hevy_last_success=None, calorie_goal=2500):
     """Add focused decision-support panels without altering the established pages."""
-    st.subheader("Insights · v0.6")
+    st.subheader("Insights · v0.7")
     st.caption("Exploratory comparisons across logged nutrition, Renpho, Garmin and Hevy. No data is modified.")
     energy_tab, strength_tab, recovery_tab, food_tab, quality_tab = st.tabs(
         ["Energy balance", "Strength", "Recovery", "Nutrition quality", "Sync health"]
@@ -160,7 +161,14 @@ def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start,
 
     with energy_tab:
         st.markdown("#### Weight-derived maintenance estimate")
-        phase_default = max(start, min(end, date(2026, 10, 7)))
+        # Phase dates are personal settings. Keep them in private Streamlit
+        # Secrets instead of embedding a user's history in public source.
+        raw_phase_start = os.environ.get('PHASE_START')
+        try:
+            suggested_phase = date.fromisoformat(raw_phase_start) if raw_phase_start else end - timedelta(days=27)
+        except ValueError:
+            suggested_phase = end - timedelta(days=27)
+        phase_default = max(start, min(end, suggested_phase))
         phase_start = st.date_input("Phase start", value=phase_default, min_value=start, max_value=end, key="insight_phase")
         min_meals = st.number_input("Minimum logged meal records for a usable day", min_value=1, max_value=8, value=3,
                                     help="A heuristic for likely complete logs, not proof of complete logging.", key="insight_meals")
