@@ -5,6 +5,7 @@ on:
     paths:
       - 'dashboard_v07.py'
       - 'test_dashboard_v07.py'
+      - 'test_streamlit_v07_smoke.py'
       - 'app.py'
       - 'insights_v06.py'
       - 'requirements.txt'
@@ -30,3 +31,5 @@ jobs:
         run: python -m py_compile app.py insights_v06.py dashboard_v07.py
       - name: Run analytics regression suites
         run: python -m unittest -v test_dashboard_v07 test_insights_v06 test_garmin_activity_filter
+      - name: Render all Streamlit tabs with synthetic SQLite data
+        run: python -m unittest -v test_streamlit_v07_smoke
