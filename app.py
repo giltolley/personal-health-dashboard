@@ -289,30 +289,77 @@ with pages[4]:
             weekly.index.name='Week'
             st.plotly_chart(px.bar(weekly.reset_index(),x='Week',y='Sessions',title='Strength sessions per week'),use_container_width=True)
         if not sets.empty:
-            working=sets[sets.working_set].copy()
-            weekly_sets=working.groupby(working.local_date.dt.to_period('W-SUN').dt.start_time).size().rename('Working sets')
-            weekly_sets.index.name='Week'
-            st.plotly_chart(px.bar(weekly_sets.reset_index(),x='Week',y='Working sets',title='Weekly recorded working sets (all exercises)'),use_container_width=True)
-            st.caption('Warmups excluded. Includes normal, failure, and drop sets; these are not equivalent to independently measured hypertrophy-effective sets.')
-            st.subheader('Strength progression by exercise')
+            grouped=group_working_sets(sets,start,end)
+            weekly_groups=weekly_muscle_sets(grouped)
+            st.subheader('Weekly working sets by primary muscle group')
+            if not weekly_groups.empty:
+                st.plotly_chart(px.bar(weekly_groups,x='week',y='sets',color='group',
+                    barmode='stack',title='Primary-muscle working sets per week',
+                    labels={'week':'Week starting','sets':'Working sets','group':'Primary group'}),
+                    use_container_width=True)
+                with st.expander('Weekly sets by muscle group (table)'):
+                    table=weekly_groups.pivot(index='week',columns='group',values='sets').fillna(0).astype(int)
+                    table['Total']=table.sum(axis=1)
+                    st.dataframe(table,use_container_width=True)
+            st.caption('Each working set counts once toward the exercise\'s primary group; compound sets '
+                'are not split across secondary muscles. Warmups excluded; normal, failure, and drop sets included.')
+
+            st.subheader('Workout muscle-group breakdown')
+            if not sessions.empty and not grouped.empty:
+                options_sessions=list(sessions.workout_id)
+                labels={row.workout_id:f'{idx:%b %d, %Y} — {row.title}' for idx,row in sessions.iterrows()}
+                workout_id=st.selectbox('Choose a workout',options_sessions,
+                    format_func=lambda item:labels.get(item,item),key='training_workout_pie')
+                distribution=workout_breakdown(grouped,workout_id)
+                if not distribution.empty:
+                    c_pie,c_table=st.columns([2,3])
+                    with c_pie:
+                        st.plotly_chart(px.pie(distribution,names='group',values='sets',hole=0.4,
+                            title='Working sets by primary group'),use_container_width=True)
+                    with c_table:
+                        session_sets=grouped[grouped.workout_id==workout_id]
+                        breakdown=(session_sets.groupby(['exercise','group']).size()
+                            .rename('Working sets').reset_index().sort_values('Working sets',ascending=False))
+                        st.dataframe(breakdown,use_container_width=True,hide_index=True)
+                else:
+                    st.info('No eligible working sets in this workout.')
+                st.caption('This summarizes set allocation, not measured muscle activation or '
+                    'hypertrophy-equivalent sets. Back-off sets are included.')
+
+            st.subheader('Strength progression and volume by exercise')
             options=sorted(sets.exercise.dropna().unique())
-            defaults=[x for x in options if x in ('Bench Press (Barbell)','Deadlift (Barbell)')]
-            preferred=defaults[0] if defaults else options[0]
-            exercise=st.selectbox('Exercise',options,index=options.index(preferred))
-            selected=sets[sets.exercise==exercise].copy()
-            day_best=(selected.groupby('local_date',as_index=False)
-                .agg(best_e1rm_lb=('estimated_1rm_lb','max'),max_logged_weight_lb=('weight_lb','max')))
-            if day_best.best_e1rm_lb.notna().any():
-                fig=px.line(day_best,x='local_date',y='best_e1rm_lb',markers=True,
-                    labels={'local_date':'Workout date','best_e1rm_lb':'Estimated 1RM (lb)'},title='Estimated 1RM by session')
-                st.plotly_chart(fig,use_container_width=True)
-            else:
-                st.info('No eligible weighted sets with 1–10 reps to estimate strength for this exercise.')
-            st.caption('Epley e1RM from the highest eligible working set per session (1–10 reps). This is an estimate, not a tested 1RM. Exercise variants and loading conventions are not merged.')
-            columns=['local_date','workout_title','set_type','weight_lb','reps','rpe','estimated_1rm_lb']
-            st.dataframe(selected[columns].sort_values('local_date',ascending=False),use_container_width=True,hide_index=True)
-            with st.expander('Top exercises by recorded working sets'):
-                st.dataframe(working.groupby('exercise').size().sort_values(ascending=False).rename('Sets').to_frame(),use_container_width=True)
+            if options:
+                defaults=[x for x in options if x in ('Bench Press (Barbell)','Deadlift (Barbell)')]
+                preferred=defaults[0] if defaults else options[0]
+                exercise=st.selectbox('Exercise',options,index=options.index(preferred))
+                selected=sets[sets.exercise==exercise].copy()
+                day_best=per_exercise_metrics(sets,exercise)
+                if not day_best.empty:
+                    c_strength,c_volume=st.columns(2)
+                    with c_strength:
+                        if day_best.estimated_1rm_lb.notna().any():
+                            st.plotly_chart(px.line(day_best,x='local_date',y='estimated_1rm_lb',markers=True,
+                                title='Estimated 1RM by workout',labels={'local_date':'Date','estimated_1rm_lb':'e1RM (lb)'}),
+                                use_container_width=True)
+                        else:
+                            st.info('No eligible 1–10 rep sets to estimate 1RM.')
+                    with c_volume:
+                        if day_best.volume_lb.notna().any():
+                            st.plotly_chart(px.bar(day_best,x='local_date',y='volume_lb',
+                                title='Total loaded volume by workout',labels={'local_date':'Date','volume_lb':'Weight × reps (lb)'}),
+                                use_container_width=True)
+                        else:
+                            st.info('No weighted sets available for the volume calculation.')
+                    st.dataframe(day_best.sort_values('local_date',ascending=False),use_container_width=True,hide_index=True)
+                st.caption('Volume sums weight × reps for weighted working sets, including back-off and drop sets; '
+                    'it excludes warmups and cannot estimate bodyweight or assistance-machine resistance. '
+                    'Epley 1RM is estimated from eligible 1–10 rep sets and is not a tested maximum.')
+                columns=['local_date','workout_title','set_type','weight_lb','reps','rpe','estimated_1rm_lb']
+                st.dataframe(selected[columns].sort_values('local_date',ascending=False),
+                             use_container_width=True,hide_index=True)
+                with st.expander('Top exercises by recorded working sets'):
+                    st.dataframe(grouped.groupby('exercise').size().sort_values(ascending=False)
+                                 .rename('Sets').to_frame(),use_container_width=True)
         st.subheader('Hevy sessions')
         if not sessions.empty:
             st.dataframe(sessions[['title','duration_minutes']].sort_index(ascending=False),use_container_width=True)
