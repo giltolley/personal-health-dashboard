@@ -1,0 +1,32 @@
+name: Validate focused dashboard v0.8
+
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'dashboard_v08.py'
+      - 'test_dashboard_v08.py'
+      - 'test_streamlit_v07_smoke.py'
+      - '.github/workflows/test-dashboard-v08.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Compile application and analytics
+        run: python -m py_compile app.py dashboard_v08.py insights_v06.py dashboard_v07.py
+      - name: Test business metrics and charts
+        run: python -m unittest -v test_dashboard_v08 test_dashboard_v07 test_insights_v06 test_garmin_activity_filter
+      - name: Render every tab with synthetic measurements
+        run: python -m unittest -v test_streamlit_v07_smoke
