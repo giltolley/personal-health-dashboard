@@ -1,4 +1,4 @@
-"""Unified Personal Health Dashboard — local-first 0.3."""
+"""Unified Personal Health Dashboard — v0.7 analytics."""
 import os
 import sqlite3
 from datetime import date,timedelta
@@ -175,7 +175,7 @@ if start>end:st.error('Start date must be before end date.');st.stop()
 def f(df):return filtered(df,start,end)
 nd=f(daily);g=f(garmin);w=f(weight.to_frame());hrv=g if not g.empty else pd.DataFrame()
 
-pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality','Insights v0.6'])
+pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality','Insights'])
 with pages[0]:
     st.subheader('At a glance')
     last30_start=max(start,end-timedelta(days=29))
