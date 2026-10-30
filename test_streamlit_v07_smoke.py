@@ -60,7 +60,9 @@ class StreamlitUITests(unittest.TestCase):
             try:
                 at=AppTest.from_file('app.py',default_timeout=45).run()
                 self.assertFalse(at.exception, 'Streamlit failed to render: '+str(at.exception))
-                self.assertTrue(any('Insights' in tab.label for tab in at.tabs))
+                self.assertEqual([tab.label for tab in at.tabs],
+                    ['Overview','Energy & Nutrition','Training','Recovery & Health','Data & Sync'])
+                self.assertFalse(any('Insights' in tab.label for tab in at.tabs))
             finally:
                 if original is None: os.environ.pop('NUTRITION_DB',None)
                 else: os.environ['NUTRITION_DB']=original
