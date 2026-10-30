@@ -104,20 +104,9 @@ def training_by_week(sets, workouts, start, end):
     data = data[data["working_set"].fillna(False)].copy()
     if data.empty:
         return data
-    names = data["exercise"].fillna("").str.lower()
-    classification = [
-        (r"bench|chest|fly|push.up", "Chest"),
-        (r"deadlift|row|pulldown|pull.up|chin.up|back extension", "Back / hinge"),
-        (r"squat|leg press|leg curl|leg extension|lunge|calf", "Legs"),
-        (r"overhead|shoulder|lateral|face pull|reverse fly|rear delt", "Shoulders"),
-        (r"bicep|curl", "Biceps"),
-        (r"tricep|pushdown|skullcrush", "Triceps"),
-        (r"crunch|ab|plank|knee raise|leg raise|russian twist", "Core"),
-    ]
-    data["group"] = "Unmapped"
-    for pattern, label in classification:
-        matches = names.str.contains(pattern, regex=True, na=False) & data["group"].eq("Unmapped")
-        data.loc[matches, "group"] = label
+    # Shared exercise mapping across Insights and Training pages.
+    from dashboard_v07 import classify_exercise
+    data["group"] = data["exercise"].apply(classify_exercise)
     data["week"] = data["local_date"].dt.to_period("W-SUN").dt.start_time
     return data
 
