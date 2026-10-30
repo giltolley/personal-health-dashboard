@@ -6,11 +6,14 @@ All estimates are exploratory; wearable expenditure is not measured TDEE.
 from __future__ import annotations
 
 from datetime import date, timedelta
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from dashboard_v07 import (energy_overlay_frame, energy_overlay_chart,
+                           cumulative_balance_chart, per_exercise_metrics)
 
 LB_PER_KG = 2.20462262185
 KCAL_PER_LB_APPROX = 3500.0  # Short-window heuristic, not a physiological constant.
@@ -104,20 +107,9 @@ def training_by_week(sets, workouts, start, end):
     data = data[data["working_set"].fillna(False)].copy()
     if data.empty:
         return data
-    names = data["exercise"].fillna("").str.lower()
-    classification = [
-        (r"bench|chest|fly|push.up", "Chest"),
-        (r"deadlift|row|pulldown|pull.up|chin.up|back extension", "Back / hinge"),
-        (r"squat|leg press|leg curl|leg extension|lunge|calf", "Legs"),
-        (r"overhead|shoulder|lateral|face pull|reverse fly|rear delt", "Shoulders"),
-        (r"bicep|curl", "Biceps"),
-        (r"tricep|pushdown|skullcrush", "Triceps"),
-        (r"crunch|ab|plank|knee raise|leg raise|russian twist", "Core"),
-    ]
-    data["group"] = "Unmapped"
-    for pattern, label in classification:
-        matches = names.str.contains(pattern, regex=True, na=False) & data["group"].eq("Unmapped")
-        data.loc[matches, "group"] = label
+    # Shared exercise mapping across Insights and Training pages.
+    from dashboard_v07 import classify_exercise
+    data["group"] = data["exercise"].apply(classify_exercise)
     data["week"] = data["local_date"].dt.to_period("W-SUN").dt.start_time
     return data
 
@@ -159,9 +151,9 @@ def _fmt(value, precision=0):
     return f"{value:,.{precision}f}" if pd.notna(value) else "—"
 
 
-def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start, end, today, hevy_last_success=None):
+def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start, end, today, hevy_last_success=None, calorie_goal=2500):
     """Add focused decision-support panels without altering the established pages."""
-    st.subheader("Insights · v0.6")
+    st.subheader("Insights · v0.7")
     st.caption("Exploratory comparisons across logged nutrition, Renpho, Garmin and Hevy. No data is modified.")
     energy_tab, strength_tab, recovery_tab, food_tab, quality_tab = st.tabs(
         ["Energy balance", "Strength", "Recovery", "Nutrition quality", "Sync health"]
@@ -169,7 +161,14 @@ def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start,
 
     with energy_tab:
         st.markdown("#### Weight-derived maintenance estimate")
-        phase_default = max(start, min(end, date(2026, 10, 7)))
+        # Phase dates are personal settings. Keep them in private Streamlit
+        # Secrets instead of embedding a user's history in public source.
+        raw_phase_start = os.environ.get('PHASE_START')
+        try:
+            suggested_phase = date.fromisoformat(raw_phase_start) if raw_phase_start else end - timedelta(days=27)
+        except ValueError:
+            suggested_phase = end - timedelta(days=27)
+        phase_default = max(start, min(end, suggested_phase))
         phase_start = st.date_input("Phase start", value=phase_default, min_value=start, max_value=end, key="insight_phase")
         min_meals = st.number_input("Minimum logged meal records for a usable day", min_value=1, max_value=8, value=3,
                                     help="A heuristic for likely complete logs, not proof of complete logging.", key="insight_meals")
@@ -210,15 +209,25 @@ def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start,
                             _fmt(estimates.max()) + " kcal/day. Treat this as sensitivity across windows, not a confidence interval.")
             else:
                 st.info("At least 14 completed days within this phase are needed for a weight-derived estimate.")
-            plot = full[["weight_lb"]].copy()
-            plot["7-day weight average"] = plot["weight_lb"].rolling(7, min_periods=4).mean()
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=plot.index, y=plot["weight_lb"], name="Daily weight", mode="markers+lines", opacity=0.45))
-            fig.add_trace(go.Scatter(x=plot.index, y=plot["7-day weight average"], name="7-day average", mode="lines"))
-            fig.update_layout(title="Weight and rolling average", xaxis_title="Date", yaxis_title="lb")
-            st.plotly_chart(fig, use_container_width=True)
-            kcal_plot = full[["usable_intake", "garmin_tdee"]].rename(columns={"usable_intake":"Logged calories", "garmin_tdee":"Garmin expenditure"})
-            st.plotly_chart(px.line(kcal_plot, labels={"value":"kcal", "index":"Date", "variable":"Metric"}, title="Logged intake versus wearable expenditure"), use_container_width=True)
+            st.markdown("#### Integrated energy and weight comparison")
+            combined=energy_overlay_frame(daily,weight,garmin,phase_start,cutoff)
+            comparison=st.radio("Comparison view",["Daily overlay","Cumulative energy versus weight"],
+                                horizontal=True,key="energy_comparison_view")
+            if comparison=="Daily overlay":
+                st.plotly_chart(energy_overlay_chart(combined,calorie_goal),use_container_width=True)
+                st.caption("Left axis: daily logged calories and two expenditure estimates (kcal/day). "
+                    "Right axis: seven-day average scale weight (lb). The 28-day weight-derived TDEE line is "
+                    "a noisy regression-based estimate, not a direct measurement. Cross-axis alignment is visual only.")
+            else:
+                comparison_chart=cumulative_balance_chart(combined)
+                if comparison_chart is None:
+                    st.info("The cumulative view requires 28 consecutive completed days of nutrition and Garmin energy, "
+                            "plus sufficient weight data. Missing days are never treated as zero.")
+                else:
+                    st.plotly_chart(comparison_chart,use_container_width=True)
+                    st.caption("The calorie balance uses Garmin expenditure as a comparison estimate and 3,500 kcal/lb "
+                        "as a rough conversion. Changes in water, glycogen, bowel contents and energy adaptation make "
+                        "short-term weight responses noisy. This is not a causal measure of a single high-calorie day.")
 
     with strength_tab:
         st.markdown("#### Strength progression and volume")
@@ -248,6 +257,11 @@ def render_insights(daily, weight, garmin, hevy_sets, hevy_workouts, log, start,
                 st.plotly_chart(px.line(strength, x="local_date", y="estimated_1rm_lb", markers=True,
                                          title=f"{exercise}: best eligible set e1RM",
                                          labels={"local_date":"Date", "estimated_1rm_lb":"Estimated 1RM (lb)"}), use_container_width=True)
+            if strength["volume_lb"].notna().any():
+                st.plotly_chart(px.bar(strength,x="local_date",y="volume_lb",
+                    title=f"{exercise}: total loaded volume per workout",
+                    labels={"local_date":"Workout date","volume_lb":"Weight × reps (lb)"}),
+                    use_container_width=True)
             st.dataframe(strength.sort_values("local_date", ascending=False), hide_index=True, use_container_width=True)
             st.caption("Epley 1RM estimates are limited to weighted working sets of 1–10 reps. "
                        "Trends are more informative than one estimated maximum; exercise variants remain separate.")

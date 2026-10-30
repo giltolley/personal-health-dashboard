@@ -1,4 +1,4 @@
-"""Unified Personal Health Dashboard — local-first 0.3."""
+"""Unified Personal Health Dashboard — v0.7 analytics."""
 import os
 import sqlite3
 from datetime import date,timedelta
@@ -10,6 +10,9 @@ import streamlit as st
 from importer import initialize, import_health_zip, import_backfill_csv, read_daily, read_weight
 from datastore import read_frame
 from insights_v06 import render_insights
+from dashboard_v07 import (default_date_range, rolling_calorie_frame, calorie_chart,
+                            group_working_sets, weekly_muscle_sets, workout_breakdown,
+                            per_exercise_metrics)
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -56,6 +59,17 @@ st.title('Personal Health Analytics')
 st.caption('Personal dashboard · Source-aware metrics · Missing records are not zero')
 
 with st.sidebar:
+    st.header('Calorie goal')
+    # Set these optionally through private Streamlit Secrets, never source.
+    calorie_goal=st.number_input('Current daily calorie target (kcal)',
+        min_value=1000,max_value=6000,step=25,
+        value=int(os.environ.get('CALORIE_GOAL','2500')),key='calorie_goal')
+    calorie_tolerance=st.number_input('Goal range (± kcal)',
+        min_value=0,max_value=500,step=25,
+        value=int(os.environ.get('CALORIE_TOLERANCE','100')),key='calorie_tolerance')
+    st.caption('Manual reference target; not imported from Garmin or MyFitnessPal. '
+               'The current goal line is shown across the selected period, even if your historical goal differed.')
+    st.divider()
     st.header('Data integrations')
     if HOSTED:
         st.info('Cloud mode: Garmin and Hevy sync through scheduled jobs. Upload raw Health Connect backups only in your local installation; migrate the selected records to PostgreSQL.')
@@ -152,16 +166,16 @@ if not frames:
     st.stop()
 oldest=min(frame.index.min().date() for frame in frames)
 latest=max(frame.index.max().date() for frame in frames)
-start_default=max(oldest,TODAY-timedelta(days=89))
+start_default,end_default=default_date_range(TODAY,oldest)
 a,b=st.columns(2)
 start=a.date_input('Start date',value=start_default,min_value=oldest,max_value=TODAY)
-end=b.date_input('End date',value=TODAY,min_value=oldest,max_value=TODAY)
+end=b.date_input('End date',value=end_default,min_value=oldest,max_value=TODAY)
 if start>end:st.error('Start date must be before end date.');st.stop()
 
 def f(df):return filtered(df,start,end)
 nd=f(daily);g=f(garmin);w=f(weight.to_frame());hrv=g if not g.empty else pd.DataFrame()
 
-pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality','Insights v0.6'])
+pages=st.tabs(['Overview','Nutrition','Body composition','Garmin & recovery','Training & strength','Blood pressure','Data quality','Insights'])
 with pages[0]:
     st.subheader('At a glance')
     last30_start=max(start,end-timedelta(days=29))
@@ -181,26 +195,39 @@ with pages[0]:
     with c2:
         if not g.empty:line_chart(g,['calories_burned'],'Garmin estimated daily expenditure','kcal')
         else:st.info('Import Garmin data to show expenditure.')
-    st.caption('Energy expenditure is a wearable estimate, not a measured TDEE. Missing and partial nutrition days are excluded from averages only when identifiable. A weight-based TDEE model will follow after backfill validation.')
+    st.caption('Garmin expenditure is a wearable estimate, not directly measured TDEE. Use Energy balance Insights for weight-derived estimates and coverage checks.')
 
 with pages[1]:
     st.subheader('Nutrition')
     if daily.empty:st.info('Import a Health Connect archive to populate nutrition.');
     else:
-        complete=nd.copy()
-        if not complete.empty:
-            # Reindex to reveal dates missing after/between snapshots; don't assume today is complete.
-            complete=complete.reindex(pd.date_range(start,end,freq='D'))
+        # Ignore an in-progress current date even when manually selected.
+        completed_end=min(end,TODAY-timedelta(days=1))
+        if start>completed_end:
+            st.info('No completed days in the selected range. Try ending at yesterday.')
+        else:
+            complete=filtered(daily,start,completed_end).reindex(pd.date_range(start,completed_end,freq='D'))
             complete.index.name='local_date'
             missing=complete.index[complete.calories.isna()]
+            # Build averages from historical context before the visible range.
+            nutrition_history=rolling_calorie_frame(daily,completed_end)
+            trends=filtered(nutrition_history,start,completed_end)
             c1,c2,c3,c4=st.columns(4)
             c1.metric('Mean logged intake',metric_or_dash(complete.calories.mean())+' kcal')
-            c2.metric('Mean protein',metric_or_dash(complete.protein_g.mean())+' g')
-            c3.metric('Days with data',str(int(complete.calories.notna().sum())))
-            c4.metric('Missing dates',str(len(missing)))
+            c2.metric('7-day average',metric_or_dash(trends.avg7.iloc[-1])+' kcal' if not trends.empty else '—')
+            c3.metric('30-day average',metric_or_dash(trends.avg30.iloc[-1])+' kcal' if not trends.empty else '—')
+            c4.metric('Days with nutrition',f'{int(complete.calories.notna().sum())}/{len(complete)}')
             if len(missing):
-                st.warning(f'Dates without nutrition records ({len(missing)}): '+', '.join(x.strftime('%b %d') for x in missing[:14])+(' …' if len(missing)>14 else '')+'. This can include incomplete syncs; not interpreted as zero intake.')
-            line_chart(complete,['calories'],'Daily logged calories','kcal')
+                st.warning(f'Completed dates without nutrition records ({len(missing)}): '+
+                    ', '.join(x.strftime('%b %d') for x in missing[:14])+
+                    (' …' if len(missing)>14 else '')+
+                    '. Missing dates are not treated as zero calories.')
+            if not trends.empty:
+                st.plotly_chart(calorie_chart(trends,calorie_goal,calorie_tolerance),
+                                use_container_width=True)
+                st.caption('The 7-day average requires at least five likely complete logs; '
+                    'the 30-day average requires at least 21. Today is excluded. '
+                    'Goal and acceptable range are configured in the sidebar, not read from either app.')
             line_chart(complete,['protein_g','carbs_g','fat_g'],'Macronutrients','grams')
             with st.expander('Fiber, sodium and potassium'):
                 for col,label,unit in [('fiber_g','Fiber','g'),('sodium_mg','Sodium','mg'),('potassium_mg','Potassium','mg')]:
@@ -262,30 +289,77 @@ with pages[4]:
             weekly.index.name='Week'
             st.plotly_chart(px.bar(weekly.reset_index(),x='Week',y='Sessions',title='Strength sessions per week'),use_container_width=True)
         if not sets.empty:
-            working=sets[sets.working_set].copy()
-            weekly_sets=working.groupby(working.local_date.dt.to_period('W-SUN').dt.start_time).size().rename('Working sets')
-            weekly_sets.index.name='Week'
-            st.plotly_chart(px.bar(weekly_sets.reset_index(),x='Week',y='Working sets',title='Weekly recorded working sets (all exercises)'),use_container_width=True)
-            st.caption('Warmups excluded. Includes normal, failure, and drop sets; these are not equivalent to independently measured hypertrophy-effective sets.')
-            st.subheader('Strength progression by exercise')
+            grouped=group_working_sets(sets,start,end)
+            weekly_groups=weekly_muscle_sets(grouped)
+            st.subheader('Weekly working sets by primary muscle group')
+            if not weekly_groups.empty:
+                st.plotly_chart(px.bar(weekly_groups,x='week',y='sets',color='group',
+                    barmode='stack',title='Primary-muscle working sets per week',
+                    labels={'week':'Week starting','sets':'Working sets','group':'Primary group'}),
+                    use_container_width=True)
+                with st.expander('Weekly sets by muscle group (table)'):
+                    table=weekly_groups.pivot(index='week',columns='group',values='sets').fillna(0).astype(int)
+                    table['Total']=table.sum(axis=1)
+                    st.dataframe(table,use_container_width=True)
+            st.caption('Each working set counts once toward the exercise\'s primary group; compound sets '
+                'are not split across secondary muscles. Warmups excluded; normal, failure, and drop sets included.')
+
+            st.subheader('Workout muscle-group breakdown')
+            if not sessions.empty and not grouped.empty:
+                options_sessions=list(sessions.workout_id)
+                labels={row.workout_id:f'{idx:%b %d, %Y} — {row.title}' for idx,row in sessions.iterrows()}
+                workout_id=st.selectbox('Choose a workout',options_sessions,
+                    format_func=lambda item:labels.get(item,item),key='training_workout_pie')
+                distribution=workout_breakdown(grouped,workout_id)
+                if not distribution.empty:
+                    c_pie,c_table=st.columns([2,3])
+                    with c_pie:
+                        st.plotly_chart(px.pie(distribution,names='group',values='sets',hole=0.4,
+                            title='Working sets by primary group'),use_container_width=True)
+                    with c_table:
+                        session_sets=grouped[grouped.workout_id==workout_id]
+                        breakdown=(session_sets.groupby(['exercise','group']).size()
+                            .rename('Working sets').reset_index().sort_values('Working sets',ascending=False))
+                        st.dataframe(breakdown,use_container_width=True,hide_index=True)
+                else:
+                    st.info('No eligible working sets in this workout.')
+                st.caption('This summarizes set allocation, not measured muscle activation or '
+                    'hypertrophy-equivalent sets. Back-off sets are included.')
+
+            st.subheader('Strength progression and volume by exercise')
             options=sorted(sets.exercise.dropna().unique())
-            defaults=[x for x in options if x in ('Bench Press (Barbell)','Deadlift (Barbell)')]
-            preferred=defaults[0] if defaults else options[0]
-            exercise=st.selectbox('Exercise',options,index=options.index(preferred))
-            selected=sets[sets.exercise==exercise].copy()
-            day_best=(selected.groupby('local_date',as_index=False)
-                .agg(best_e1rm_lb=('estimated_1rm_lb','max'),max_logged_weight_lb=('weight_lb','max')))
-            if day_best.best_e1rm_lb.notna().any():
-                fig=px.line(day_best,x='local_date',y='best_e1rm_lb',markers=True,
-                    labels={'local_date':'Workout date','best_e1rm_lb':'Estimated 1RM (lb)'},title='Estimated 1RM by session')
-                st.plotly_chart(fig,use_container_width=True)
-            else:
-                st.info('No eligible weighted sets with 1–10 reps to estimate strength for this exercise.')
-            st.caption('Epley e1RM from the highest eligible working set per session (1–10 reps). This is an estimate, not a tested 1RM. Exercise variants and loading conventions are not merged.')
-            columns=['local_date','workout_title','set_type','weight_lb','reps','rpe','estimated_1rm_lb']
-            st.dataframe(selected[columns].sort_values('local_date',ascending=False),use_container_width=True,hide_index=True)
-            with st.expander('Top exercises by recorded working sets'):
-                st.dataframe(working.groupby('exercise').size().sort_values(ascending=False).rename('Sets').to_frame(),use_container_width=True)
+            if options:
+                defaults=[x for x in options if x in ('Bench Press (Barbell)','Deadlift (Barbell)')]
+                preferred=defaults[0] if defaults else options[0]
+                exercise=st.selectbox('Exercise',options,index=options.index(preferred))
+                selected=sets[sets.exercise==exercise].copy()
+                day_best=per_exercise_metrics(sets,exercise)
+                if not day_best.empty:
+                    c_strength,c_volume=st.columns(2)
+                    with c_strength:
+                        if day_best.estimated_1rm_lb.notna().any():
+                            st.plotly_chart(px.line(day_best,x='local_date',y='estimated_1rm_lb',markers=True,
+                                title='Estimated 1RM by workout',labels={'local_date':'Date','estimated_1rm_lb':'e1RM (lb)'}),
+                                use_container_width=True)
+                        else:
+                            st.info('No eligible 1–10 rep sets to estimate 1RM.')
+                    with c_volume:
+                        if day_best.volume_lb.notna().any():
+                            st.plotly_chart(px.bar(day_best,x='local_date',y='volume_lb',
+                                title='Total loaded volume by workout',labels={'local_date':'Date','volume_lb':'Weight × reps (lb)'}),
+                                use_container_width=True)
+                        else:
+                            st.info('No weighted sets available for the volume calculation.')
+                    st.dataframe(day_best.sort_values('local_date',ascending=False),use_container_width=True,hide_index=True)
+                st.caption('Volume sums weight × reps for weighted working sets, including back-off and drop sets; '
+                    'it excludes warmups and cannot estimate bodyweight or assistance-machine resistance. '
+                    'Epley 1RM is estimated from eligible 1–10 rep sets and is not a tested maximum.')
+                columns=['local_date','workout_title','set_type','weight_lb','reps','rpe','estimated_1rm_lb']
+                st.dataframe(selected[columns].sort_values('local_date',ascending=False),
+                             use_container_width=True,hide_index=True)
+                with st.expander('Top exercises by recorded working sets'):
+                    st.dataframe(grouped.groupby('exercise').size().sort_values(ascending=False)
+                                 .rename('Sets').to_frame(),use_container_width=True)
         st.subheader('Hevy sessions')
         if not sessions.empty:
             st.dataframe(sessions[['title','duration_minutes']].sort_index(ascending=False),use_container_width=True)
@@ -333,4 +407,5 @@ with pages[7]:
     insight_log=sql('SELECT run_id,started_at,source,dataset,record_count,status,error_type FROM ingestion_log ORDER BY run_id DESC LIMIT 1000')
     hevy_sync_row=db.execute("SELECT value FROM hevy_sync_state WHERE key='last_success_utc'").fetchone()
     render_insights(daily,weight,garmin,hevy_sets,hevy_workouts,insight_log,start,end,TODAY,
-                    hevy_last_success=hevy_sync_row[0] if hevy_sync_row else None)
+                    hevy_last_success=hevy_sync_row[0] if hevy_sync_row else None,
+                    calorie_goal=calorie_goal)
