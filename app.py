@@ -10,6 +10,9 @@ import streamlit as st
 from importer import initialize, import_health_zip, import_backfill_csv, read_daily, read_weight
 from datastore import read_frame
 from insights_v06 import render_insights
+from dashboard_v07 import (default_date_range, rolling_calorie_frame, calorie_chart,
+                            group_working_sets, weekly_muscle_sets, workout_breakdown,
+                            per_exercise_metrics)
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -56,6 +59,17 @@ st.title('Personal Health Analytics')
 st.caption('Personal dashboard · Source-aware metrics · Missing records are not zero')
 
 with st.sidebar:
+    st.header('Calorie goal')
+    # Set these optionally through private Streamlit Secrets, never source.
+    calorie_goal=st.number_input('Current daily calorie target (kcal)',
+        min_value=1000,max_value=6000,step=25,
+        value=int(os.environ.get('CALORIE_GOAL','2500')),key='calorie_goal')
+    calorie_tolerance=st.number_input('Goal range (± kcal)',
+        min_value=0,max_value=500,step=25,
+        value=int(os.environ.get('CALORIE_TOLERANCE','100')),key='calorie_tolerance')
+    st.caption('Manual reference target; not imported from Garmin or MyFitnessPal. '
+               'The current goal line is shown across the selected period, even if your historical goal differed.')
+    st.divider()
     st.header('Data integrations')
     if HOSTED:
         st.info('Cloud mode: Garmin and Hevy sync through scheduled jobs. Upload raw Health Connect backups only in your local installation; migrate the selected records to PostgreSQL.')
@@ -152,10 +166,10 @@ if not frames:
     st.stop()
 oldest=min(frame.index.min().date() for frame in frames)
 latest=max(frame.index.max().date() for frame in frames)
-start_default=max(oldest,TODAY-timedelta(days=89))
+start_default,end_default=default_date_range(TODAY,oldest)
 a,b=st.columns(2)
 start=a.date_input('Start date',value=start_default,min_value=oldest,max_value=TODAY)
-end=b.date_input('End date',value=TODAY,min_value=oldest,max_value=TODAY)
+end=b.date_input('End date',value=end_default,min_value=oldest,max_value=TODAY)
 if start>end:st.error('Start date must be before end date.');st.stop()
 
 def f(df):return filtered(df,start,end)
@@ -181,26 +195,39 @@ with pages[0]:
     with c2:
         if not g.empty:line_chart(g,['calories_burned'],'Garmin estimated daily expenditure','kcal')
         else:st.info('Import Garmin data to show expenditure.')
-    st.caption('Energy expenditure is a wearable estimate, not a measured TDEE. Missing and partial nutrition days are excluded from averages only when identifiable. A weight-based TDEE model will follow after backfill validation.')
+    st.caption('Garmin expenditure is a wearable estimate, not directly measured TDEE. Use Energy balance Insights for weight-derived estimates and coverage checks.')
 
 with pages[1]:
     st.subheader('Nutrition')
     if daily.empty:st.info('Import a Health Connect archive to populate nutrition.');
     else:
-        complete=nd.copy()
-        if not complete.empty:
-            # Reindex to reveal dates missing after/between snapshots; don't assume today is complete.
-            complete=complete.reindex(pd.date_range(start,end,freq='D'))
+        # Ignore an in-progress current date even when manually selected.
+        completed_end=min(end,TODAY-timedelta(days=1))
+        if start>completed_end:
+            st.info('No completed days in the selected range. Try ending at yesterday.')
+        else:
+            complete=filtered(daily,start,completed_end).reindex(pd.date_range(start,completed_end,freq='D'))
             complete.index.name='local_date'
             missing=complete.index[complete.calories.isna()]
+            # Build averages from historical context before the visible range.
+            nutrition_history=rolling_calorie_frame(daily,completed_end)
+            trends=filtered(nutrition_history,start,completed_end)
             c1,c2,c3,c4=st.columns(4)
             c1.metric('Mean logged intake',metric_or_dash(complete.calories.mean())+' kcal')
-            c2.metric('Mean protein',metric_or_dash(complete.protein_g.mean())+' g')
-            c3.metric('Days with data',str(int(complete.calories.notna().sum())))
-            c4.metric('Missing dates',str(len(missing)))
+            c2.metric('7-day average',metric_or_dash(trends.avg7.iloc[-1])+' kcal' if not trends.empty else '—')
+            c3.metric('30-day average',metric_or_dash(trends.avg30.iloc[-1])+' kcal' if not trends.empty else '—')
+            c4.metric('Days with nutrition',f'{int(complete.calories.notna().sum())}/{len(complete)}')
             if len(missing):
-                st.warning(f'Dates without nutrition records ({len(missing)}): '+', '.join(x.strftime('%b %d') for x in missing[:14])+(' …' if len(missing)>14 else '')+'. This can include incomplete syncs; not interpreted as zero intake.')
-            line_chart(complete,['calories'],'Daily logged calories','kcal')
+                st.warning(f'Completed dates without nutrition records ({len(missing)}): '+
+                    ', '.join(x.strftime('%b %d') for x in missing[:14])+
+                    (' …' if len(missing)>14 else '')+
+                    '. Missing dates are not treated as zero calories.')
+            if not trends.empty:
+                st.plotly_chart(calorie_chart(trends,calorie_goal,calorie_tolerance),
+                                use_container_width=True)
+                st.caption('The 7-day average requires at least five likely complete logs; '
+                    'the 30-day average requires at least 21. Today is excluded. '
+                    'Goal and acceptable range are configured in the sidebar, not read from either app.')
             line_chart(complete,['protein_g','carbs_g','fat_g'],'Macronutrients','grams')
             with st.expander('Fiber, sodium and potassium'):
                 for col,label,unit in [('fiber_g','Fiber','g'),('sodium_mg','Sodium','mg'),('potassium_mg','Potassium','mg')]:
