@@ -407,4 +407,5 @@ with pages[7]:
     insight_log=sql('SELECT run_id,started_at,source,dataset,record_count,status,error_type FROM ingestion_log ORDER BY run_id DESC LIMIT 1000')
     hevy_sync_row=db.execute("SELECT value FROM hevy_sync_state WHERE key='last_success_utc'").fetchone()
     render_insights(daily,weight,garmin,hevy_sets,hevy_workouts,insight_log,start,end,TODAY,
-                    hevy_last_success=hevy_sync_row[0] if hevy_sync_row else None)
+                    hevy_last_success=hevy_sync_row[0] if hevy_sync_row else None,
+                    calorie_goal=calorie_goal)
