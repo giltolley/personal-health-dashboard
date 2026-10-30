@@ -38,7 +38,7 @@ class V07Tests(unittest.TestCase):
         data=self.daily.copy()
         data.loc[self.idx[-1],'calories']=np.nan
         data.loc[self.idx[-2],'meals']=1
-        trend=rolling_calorie_frame(data,date(2026,10,24))
+        trend=rolling_calorie_frame(data,self.idx[-1].date())
         self.assertTrue(pd.isna(trend.iloc[-1]['usable']))
         self.assertTrue(pd.isna(trend.iloc[-2]['usable']))
         self.assertNotEqual(float(trend.iloc[-1]['avg7']),0)
