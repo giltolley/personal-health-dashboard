@@ -1,4 +1,4 @@
-"""Personal Health Dashboard — focused v0.8 views."""
+"""Personal Health Dashboard — decision-focused v0.9 views."""
 import os
 import sqlite3
 from datetime import date,timedelta
@@ -16,6 +16,9 @@ from dashboard_v07 import (default_date_range, rolling_calorie_frame,
 from dashboard_v08 import (fmt, summary, recent_logged_intake, recent_garmin,
     recent_lift, weight_smoothed, weight_chart, calories_chart, expenditure_chart,
     muscle_counts, muscle_chart, exercise_chart)
+from dashboard_v09 import (ENERGY_SERIES, DEFAULT_ENERGY_SERIES,
+    display_energy_frame, interactive_energy_figure, summarize_next_cycle, prescription,
+    LIFTS)
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -210,26 +213,33 @@ with pages[0]:
                    if m28["valid"] else
                    f"Nutrition coverage: {n7}/7 days · Garmin: {gdays}/28 days · "
                    "Calculated TDEE needs sufficient consistent records.")
-        col_weight,col_food=st.columns(2)
-        with col_weight:
-            st.plotly_chart(weight_chart(weight,DISPLAY_START,COMPLETED_END),
+        st.subheader("Energy balance explorer")
+        st.caption("Question: Is your calorie intake consistent with stable weight? "
+                   "Compare energy measures in kcal/day, with body weight in a separate "
+                   "aligned panel. Tap a legend item to hide a line; double-click to isolate it.")
+        choices=st.multiselect("Show comparisons",
+            options=list(ENERGY_SERIES),default=list(DEFAULT_ENERGY_SERIES),
+            key="overview_energy_series")
+        if choices:
+            frame=display_energy_frame(daily,weight,garmin,DISPLAY_START,COMPLETED_END)
+            st.plotly_chart(interactive_energy_figure(frame,choices),
                             use_container_width=True)
-        with col_food:
-            # A single smoothed intake series: the target and daily bars are
-            # available separately in the Nutrition deep dive.
-            history=rolling_calorie_frame(daily,COMPLETED_END)
-            visible=period_frame(history,DISPLAY_START,COMPLETED_END)
-            if not visible.empty and visible["avg7"].notna().any():
-                fig=px.line(visible,x=visible.index,y="avg7",
-                            labels={"x":"Date","avg7":"kcal/day"},
-                            title="Calorie intake · 7-day average")
-                fig.update_layout(showlegend=False,
-                                  margin=dict(l=5,r=5,b=5,t=50))
-                st.plotly_chart(fig,use_container_width=True)
-            else:
-                st.info("Not enough completed nutrition days for the 7-day intake trend.")
-        st.caption("These charts show one smoothed measurement each. "
-                   "The calculated TDEE is a rough weight-trend estimate, not a direct measurement.")
+            st.caption("Weight is a 7-day average in pounds, never on the kcal scale. "
+                       "The weight-derived TDEE uses a trailing 28-day regression and "
+                       "can lag changes in diet or activity. Individual high-calorie days "
+                       "can shift water weight without equivalent fat gain.")
+        else:
+            st.info("Select one or more measures to compare.")
+        if m28["valid"] and pd.notna(i7):
+            energy_gap=i7-m28["estimated_tdee"]
+            phrase=("roughly near the estimated maintenance level" if abs(energy_gap)<100
+                    else "above the weight-derived expenditure estimate"
+                    if energy_gap>0 else "below the weight-derived expenditure estimate")
+            st.caption("Decision context: recent 7-day intake is "+fmt(abs(energy_gap))+
+                       " kcal/day "+("higher" if energy_gap>=0 else "lower")+
+                       " than the 28-day weight-based estimate ("+phrase+
+                       "). Compare this with the smoothed weight trend; this "
+                       "difference is not a precise daily surplus.")
 
         st.subheader("Strength snapshot")
         bench=recent_lift(hevy_sets,"Bench Press (Barbell)",COMPLETED_END)
@@ -319,6 +329,16 @@ with pages[1]:
             st.caption("Garmin seven-day estimated daily energy expenditure, "
                        "not independently measured TDEE.")
 
+        with st.expander("Interactive multi-metric explorer · full selected range"):
+            st.caption("Select measures to overlay. Energy series share kcal/day; "
+                       "weight uses its own linked panel. Legend clicks also hide or isolate traces.")
+            deep_choices=st.multiselect("Show measures",options=list(ENERGY_SERIES),
+                    default=list(DEFAULT_ENERGY_SERIES),key="deep_energy_series")
+            if deep_choices:
+                deep_frame=display_energy_frame(daily,weight,garmin,start,COMPLETED_END)
+                st.plotly_chart(interactive_energy_figure(deep_frame,deep_choices),
+                                use_container_width=True)
+
         with st.expander("Compare TDEE estimates across windows"):
             reports=[]
             for n in (14,21,28,42):
@@ -378,6 +398,66 @@ with pages[2]:
                  str(int(relevant.working_set.sum())) if not relevant.empty else "0")
         c.metric("Exercises in period",
                  str(relevant.exercise.nunique()) if not relevant.empty else "0")
+        st.markdown("#### 5/3/1 · next-cycle planner")
+        st.caption("Automatically recognizes the most recent Week 3 (5/3/1+) first three "
+                   "working sets for each main lift. Warmups and later back-off sets are "
+                   "excluded. Review the detected TM before using the prescription.")
+        tm_summary,source_lifts=summarize_next_cycle(hevy_sets,through=COMPLETED_END)
+        with st.expander("Review or adjust current Training Maxes",expanded=True):
+            tm_cells=st.columns(4)
+            tm_current={}
+            for idx,(lift,(exercise,increase)) in enumerate(LIFTS.items()):
+                match=source_lifts[lift]
+                initial=int(match["tm"]) if match else 0
+                with tm_cells[idx]:
+                    tm_current[lift]=st.number_input(lift+" current TM (lb)",
+                        min_value=0,max_value=1000,value=initial,step=5,
+                        key="cycle_tm_"+lift.lower().replace(" ","_"))
+                    st.caption(("Detected "+str(match["date"])+" · 1+ × "+
+                        str(match["last_plus_reps"])+" reps") if match
+                        else "No matching 1+ workout; enter TM")
+            increment=st.selectbox("Rounding increment (lb)",[5.0,2.5],
+                index=0,key="cycle_rounding",
+                help="Rounds each prescribed load to available plates, not the TM itself.")
+        next_rows=[]
+        for lift,(exercise,increase) in LIFTS.items():
+            tm=tm_current[lift]
+            next_rows.append({"Lift":lift,"Current TM":tm if tm>0 else None,
+                "Increase":increase,"Next TM":tm+increase if tm>0 else None,
+                "Detected 1+ date":str(source_lifts[lift]["date"])
+                                if source_lifts[lift] else "Manual entry needed"})
+        st.dataframe(pd.DataFrame(next_rows),hide_index=True,use_container_width=True)
+        planned=[lift for lift in LIFTS if tm_current[lift]>0]
+        if not planned:
+            st.info("No complete 5/3/1+ sequence found. Enter the current "
+                    "Training Max for each lift to calculate the next cycle.")
+        else:
+            chosen_lift=st.selectbox("Next-cycle working sets for",planned,
+                                    key="planned_lift")
+            new_tm=tm_current[chosen_lift]+LIFTS[chosen_lift][1]
+            st.metric(chosen_lift+" · next Training Max",f"{new_tm:,.0f} lb")
+            st.dataframe(prescription(new_tm,increment),hide_index=True,
+                         use_container_width=True)
+            st.caption("Week 1: 5/5/5+ · Week 2: 3/3/3+ · Week 3: 5/3/1+. "
+                       "+ indicates the final AMRAP set with the listed minimum reps. "
+                       "Use the updated TM across the new cycle; do not add 5/10 lb "
+                       "between individual weeks. This table excludes optional back-off sets.")
+            full=[]
+            for lift in planned:
+                n_tm=tm_current[lift]+LIFTS[lift][1]
+                table=prescription(n_tm,increment)
+                table.insert(0,"Lift",lift)
+                full.append(table)
+            all_plan=pd.concat(full,ignore_index=True)
+            with st.expander("All four lifts · complete next-cycle plan"):
+                st.dataframe(all_plan,hide_index=True,use_container_width=True)
+                st.download_button("Download next-cycle plan CSV",
+                    data=all_plan.to_csv(index=False),file_name="next_531_cycle.csv",
+                    mime="text/csv",key="download_531_csv")
+        st.caption("These are suggested training prescriptions, not automatic changes to Hevy. "
+                   "If you missed the prescribed reps or intentionally repeat a cycle, "
+                   "keep or lower the TM instead of increasing it.")
+
         st.markdown("#### Strength progression")
         names=sorted(relevant.exercise.dropna().unique()) if not relevant.empty else []
         if names:
