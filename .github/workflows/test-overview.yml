@@ -5,6 +5,8 @@ on:
       - 'app.py'
       - 'overview.py'
       - 'overview_metrics.py'
+      - 'overview_charts.py'
+      - 'test_overview_charts.py'
       - 'importer.py'
       - 'test_overview.py'
       - 'test_streamlit_v07_smoke.py'
@@ -23,5 +25,5 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m py_compile app.py overview.py overview_metrics.py importer.py
-      - run: python -m unittest -v test_overview test_dashboard_v09 test_dashboard_v08 test_dashboard_v07 test_insights_v06 test_garmin_activity_filter test_hevy_fallback test_streamlit_v07_smoke
+      - run: python -m py_compile app.py overview.py overview_metrics.py overview_charts.py importer.py
+      - run: python -m unittest -v test_overview_charts test_overview test_dashboard_v09 test_dashboard_v08 test_dashboard_v07 test_insights_v06 test_garmin_activity_filter test_hevy_fallback test_streamlit_v07_smoke
