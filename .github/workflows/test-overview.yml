@@ -1,0 +1,27 @@
+name: Validate actionable health overview
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'overview.py'
+      - 'overview_metrics.py'
+      - 'importer.py'
+      - 'test_overview.py'
+      - 'test_streamlit_v07_smoke.py'
+      - '.github/workflows/test-overview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m py_compile app.py overview.py overview_metrics.py importer.py
+      - run: python -m unittest -v test_overview test_dashboard_v09 test_dashboard_v08 test_dashboard_v07 test_insights_v06 test_garmin_activity_filter test_hevy_fallback test_streamlit_v07_smoke
