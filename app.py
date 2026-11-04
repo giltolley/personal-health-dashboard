@@ -21,6 +21,7 @@ from dashboard_v09 import (ENERGY_SERIES, DEFAULT_ENERGY_SERIES,
     LIFTS)
 from goals import ensure_goals, read_goals, goal_at, window_context
 from goals_ui import goal_editor
+from data_health import load_sync_health,measurement_health,render_freshness
 from overview import render_overview
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
@@ -195,8 +196,12 @@ DISPLAY_START=max(start,COMPLETED_END-timedelta(days=44))
 def period_frame(data,begin_date,finish_date):
     return filtered(data,begin_date,finish_date)
 
+sync_health_table=load_sync_health(db,pd.Timestamp.now(tz='America/New_York'))
+measurement_health_table=measurement_health(daily,weight,garmin,bp,body_fat,hevy_workouts,TODAY)
+
 with pages[0]:
     st.subheader("Overview")
+    render_freshness(sync_health_table,measurement_health_table)
     if start>COMPLETED_END:
         st.info("Select an earlier date to see completed days.")
     else:
@@ -513,19 +518,10 @@ with pages[3]:
 with pages[4]:
     st.subheader("Data & Sync")
     st.caption("Missing or stale source data is not treated as a zero measurement.")
-    checks=[("MyFitnessPal nutrition","nutrition"),("Renpho weight","weights"),
-            ("Renpho body fat","hc_body_fat"),("Blood pressure","hc_blood_pressure"),
-            ("Garmin daily metrics","garmin_daily"),("Garmin activities","garmin_activities"),
-            ("Hevy workouts","hevy_workouts")]
-    records=[]
-    for label,table in checks:
-        n,mind,maxd=db.execute(
-            f"SELECT COUNT(*),MIN(local_date),MAX(local_date) FROM {table}").fetchone()
-        age=(TODAY-date.fromisoformat(maxd)).days if maxd else None
-        records.append({"Source":label,"Records":n,"Earliest":mind,"Latest":maxd,
-            "Age (days)":age,"Status":("No data" if not n else
-                     "Potentially stale" if age is not None and age>2 else "Recent")})
-    st.dataframe(pd.DataFrame(records),hide_index=True,use_container_width=True)
+    st.markdown('#### Successful source checks')
+    st.dataframe(sync_health_table,hide_index=True,use_container_width=True)
+    st.markdown('#### Measurement freshness and coverage')
+    st.dataframe(measurement_health_table,hide_index=True,use_container_width=True)
     state=db.execute("SELECT value FROM hevy_sync_state WHERE key='last_success_utc'").fetchone()
     st.caption("Latest successful Hevy synchronization: "+(state[0] if state else "Not recorded"))
     with st.expander("Recent import and synchronization logs"):
