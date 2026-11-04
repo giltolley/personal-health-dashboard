@@ -27,3 +27,22 @@ py -3.12 sync_all.py --hevy
 With `DATABASE_URL` set, scheduled jobs write to PostgreSQL. The hosted Streamlit UI intentionally hides raw Health Connect imports and live API sync buttons: exports are processed locally and keys belong in the scheduled-job environment, not the frontend.
 
 Security: private repository, private app, environment secrets, regular backup, and no health exports in Git. The PostgreSQL path still requires an end-to-end test with a real database before considered production-ready.
+
+
+## Actionable Overview
+
+The Overview answers five questions: blood pressure, cardiovascular activity,
+sleep, dietary gaps, and intake versus strength progress. It uses completed days
+through the selected end date and displays source coverage. Six hours is the
+personal sleep alert floor; seven hours remains the general adult reference.
+Garmin intensity minutes already weight vigorous activity twice. Hevy training
+days are separate and are not added to aerobic minutes.
+
+Nutrition summaries preserve unknown daily totals if any meal has a NULL value
+for that nutrient. The 3+ meal-record completeness proxy cannot verify food-entry
+accuracy or distinguish an omitted nutrient stored as numeric zero. Training
+suggestions compare two 28-day windows and are coaching heuristics, not automatic
+calorie adjustments. Waist tracking is optional; lab imports are deferred.
+
+Run `python -m unittest -v test_overview test_streamlit_v07_smoke` to check
+thresholds, sparse records, nutrition aggregation, and all five rendered sections.

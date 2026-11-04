@@ -35,9 +35,12 @@ class StreamlitUITests(unittest.TestCase):
                            (f'weight-{ago}',day,'synthetic',150+ago*0.01))
                 db.execute('''INSERT INTO garmin_daily
                   (local_date,calories_burned,calories_active,calories_resting,
-                   hrv_ms,resting_hr,sleep_hours,steps)
-                  VALUES(?,?,?,?,?,?,?,?)''',
-                    (day,2500,600,1900,45,57,7.5,8000))
+                   hrv_ms,resting_hr,sleep_hours,steps,intensity_minutes)
+                  VALUES(?,?,?,?,?,?,?,?,?)''',
+                    (day,2500,600,1900,45,57,6.5,8000,25))
+                if ago<8:
+                    db.execute("INSERT INTO hc_blood_pressure VALUES (?,?,?,?,?)",
+                               (f"bp-{ago}",day,"synthetic",125,82))
             workout_date=(today-timedelta(days=2)).isoformat()
             db.execute('''INSERT INTO hevy_workouts
                  (workout_id,local_date,title,start_time,end_time,updated_at,duration_minutes,raw_json)
@@ -63,6 +66,16 @@ class StreamlitUITests(unittest.TestCase):
                 self.assertEqual([tab.label for tab in at.tabs],
                     ['Overview','Energy & Nutrition','Training','Recovery & Health','Data & Sync'])
                 self.assertFalse(any('Insights' in tab.label for tab in at.tabs))
+                expected=['1. Blood Pressure','2. Cardiovascular Health','3. Sleep Quality',
+                          '4. Dietary Analysis','5. Intake vs. Training Heuristics']
+                headings=[h.value for h in at.subheader]
+                self.assertTrue(all(label in headings for label in expected))
+                self.assertTrue(any('Stage 1 range' in item.value for item in at.markdown))
+                self.assertTrue(any('Personal minimum met' in item.value for item in at.markdown))
+                self.assertTrue(any('Intensity-minute coverage: 7/7' in item.value for item in at.caption))
+                at.number_input(key='overview_protein_goal').set_value(170).run()
+                self.assertFalse(at.exception)
+                self.assertEqual(at.number_input(key='overview_protein_goal').value,170)
             finally:
                 if original is None: os.environ.pop('NUTRITION_DB',None)
                 else: os.environ['NUTRITION_DB']=original

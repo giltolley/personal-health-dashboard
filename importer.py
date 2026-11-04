@@ -186,10 +186,13 @@ def import_backfill_csv(db, file):
     return len(frame)
 
 def read_daily(db):
-    raw = read_frame(db, '''SELECT local_date, SUM(calories) calories, SUM(protein_g) protein_g,
-       SUM(carbs_g) carbs_g, SUM(fat_g) fat_g, SUM(fiber_g) fiber_g,
-       SUM(sodium_mg) sodium_mg, SUM(potassium_mg) potassium_mg, COUNT(*) meals
-       FROM nutrition GROUP BY local_date''')
+    # Partial sums hide missing nutrients. Preserve unknown when any meal lacks a value.
+    fields = ('calories','protein_g','carbs_g','fat_g','fiber_g','sodium_mg','potassium_mg')
+    aggregates = ', '.join(
+        f'CASE WHEN COUNT({field})=COUNT(*) THEN SUM({field}) END AS {field}'
+        for field in fields)
+    raw = read_frame(db, f'SELECT local_date, {aggregates}, COUNT(*) meals '
+                        'FROM nutrition GROUP BY local_date')
     bf = read_frame(db, 'SELECT * FROM backfill')
     # Explicit precedence: existing Health Connect records win. Backfill only absent dates.
     if not bf.empty:

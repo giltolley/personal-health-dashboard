@@ -1,4 +1,4 @@
-"""Personal Health Dashboard — decision-focused v0.9 views."""
+"""Personal Health Dashboard — decision-focused health overview."""
 import os
 import sqlite3
 from datetime import date,timedelta
@@ -19,6 +19,7 @@ from dashboard_v08 import (fmt, summary, recent_logged_intake, recent_garmin,
 from dashboard_v09 import (ENERGY_SERIES, DEFAULT_ENERGY_SERIES,
     display_energy_frame, interactive_energy_figure, summarize_next_cycle, prescription,
     LIFTS)
+from overview import render_overview
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -69,7 +70,7 @@ with st.sidebar:
     # Set these optionally through private Streamlit Secrets, never source.
     calorie_goal=st.number_input('Current daily calorie target (kcal)',
         min_value=1000,max_value=6000,step=25,
-        value=int(os.environ.get('CALORIE_GOAL','2500')),key='calorie_goal')
+        value=int(os.environ.get('CALORIE_GOAL','2800')),key='calorie_goal')
     calorie_tolerance=st.number_input('Goal range (± kcal)',
         min_value=0,max_value=500,step=25,
         value=int(os.environ.get('CALORIE_TOLERANCE','100')),key='calorie_tolerance')
@@ -191,86 +192,11 @@ def period_frame(data,begin_date,finish_date):
 
 with pages[0]:
     st.subheader("Overview")
-    st.caption(f"Completed days through {COMPLETED_END:%b %d, %Y}. "
-               "The main indicators use recent weeks ending on the selected date.")
     if start>COMPLETED_END:
-        st.info("Select an earlier end date to see completed days.")
+        st.info("Select an earlier date to see completed days.")
     else:
-        m28=summary(daily,weight,garmin,COMPLETED_END,28)
-        i7,n7=recent_logged_intake(daily,COMPLETED_END,7)
-        ga28,gdays=recent_garmin(garmin,COMPLETED_END,28)
-        weights7=weight_smoothed(weight,COMPLETED_END)
-        w7=weights7.dropna().iloc[-1] if weights7.notna().any() else float('nan')
-        a,b,c,d=st.columns(4)
-        a.metric("Body weight · 7-day avg",fmt(w7,1)+" lb" if pd.notna(w7) else "—")
-        b.metric("Calorie intake · 7-day avg",fmt(i7)+" kcal" if pd.notna(i7) else "—")
-        c.metric("Calculated TDEE · 28 days",fmt(m28["estimated_tdee"])+" kcal"
-                 if m28["valid"] else "—")
-        d.metric("Garmin expenditure · 28 days",fmt(ga28)+" kcal"
-                 if pd.notna(ga28) else "—")
-        st.caption(f"Nutrition coverage: {n7}/7 days · Garmin: {gdays}/28 days · "
-                   f"28-day weight trend: {fmt(m28['trend_lb_week'],2)} lb/week"
-                   if m28["valid"] else
-                   f"Nutrition coverage: {n7}/7 days · Garmin: {gdays}/28 days · "
-                   "Calculated TDEE needs sufficient consistent records.")
-        st.subheader("Energy balance explorer")
-        st.caption("Question: Is your calorie intake consistent with stable weight? "
-                   "Compare energy measures in kcal/day, with body weight in a separate "
-                   "aligned panel. Tap a legend item to hide a line; double-click to isolate it.")
-        choices=st.multiselect("Show comparisons",
-            options=list(ENERGY_SERIES),default=list(DEFAULT_ENERGY_SERIES),
-            key="overview_energy_series")
-        if choices:
-            frame=display_energy_frame(daily,weight,garmin,DISPLAY_START,COMPLETED_END)
-            st.plotly_chart(interactive_energy_figure(frame,choices),
-                            use_container_width=True)
-            st.caption("Weight is a 7-day average in pounds, never on the kcal scale. "
-                       "The weight-derived TDEE uses a trailing 28-day regression and "
-                       "can lag changes in diet or activity. Individual high-calorie days "
-                       "can shift water weight without equivalent fat gain.")
-        else:
-            st.info("Select one or more measures to compare.")
-        if m28["valid"] and pd.notna(i7):
-            energy_gap=i7-m28["estimated_tdee"]
-            phrase=("roughly near the estimated maintenance level" if abs(energy_gap)<100
-                    else "above the weight-derived expenditure estimate"
-                    if energy_gap>0 else "below the weight-derived expenditure estimate")
-            st.caption("Decision context: recent 7-day intake is "+fmt(abs(energy_gap))+
-                       " kcal/day "+("higher" if energy_gap>=0 else "lower")+
-                       " than the 28-day weight-based estimate ("+phrase+
-                       "). Compare this with the smoothed weight trend; this "
-                       "difference is not a precise daily surplus.")
-
-        st.subheader("Strength snapshot")
-        bench=recent_lift(hevy_sets,"Bench Press (Barbell)",COMPLETED_END)
-        deadlift=recent_lift(hevy_sets,"Deadlift (Barbell)",COMPLETED_END)
-        count_sessions=int((hevy_workouts.index.to_series().between(
-            pd.Timestamp(COMPLETED_END)-pd.Timedelta(days=27),
-            pd.Timestamp(COMPLETED_END))).sum()) if not hevy_workouts.empty else 0
-        a,b,c=st.columns(3)
-        for slot,caption,lift in ((a,"Bench press · estimated 1RM",bench),
-                                  (b,"Deadlift · estimated 1RM",deadlift)):
-            if lift:
-                slot.metric(caption,fmt(lift["value"])+" lb",
-                            delta=fmt(lift["change"])+" lb vs previous"
-                            if lift["change"] is not None else None)
-                slot.caption(f"Latest eligible workout: {lift['date']:%b %d}")
-            else:
-                slot.metric(caption,"—")
-        c.metric("Strength workouts · 28 days",str(count_sessions))
-        st.caption("Estimated 1RMs use eligible Hevy working sets. "
-                   "Open Training for individual lifts, weekly sets and workout breakdowns.")
-
-        st.subheader("Recovery snapshot")
-        recent_recovery=period_frame(garmin,COMPLETED_END-timedelta(days=6),COMPLETED_END)
-        def recovery_mean(column):
-            return pd.to_numeric(recent_recovery[column],errors='coerce').mean() \
-                if column in recent_recovery else float('nan')
-        a,b,c=st.columns(3)
-        a.metric("Sleep · 7-day avg",fmt(recovery_mean("sleep_hours"),1)+" h")
-        b.metric("Overnight HRV · 7-day avg",fmt(recovery_mean("hrv_ms"))+" ms")
-        c.metric("Resting HR · 7-day avg",fmt(recovery_mean("resting_hr"))+" bpm")
-        st.caption("Recovery readings are descriptive; compare longer-term trends in Recovery & Health.")
+        render_overview(daily,weight,garmin,bp,hevy_workouts,hevy_sets,
+                        COMPLETED_END,calorie_goal)
 
 with pages[1]:
     st.subheader("Energy & Nutrition")
