@@ -69,3 +69,18 @@ this password or personal goal entries. Local editing requires no password.
 Rerun or reboot the hosted app after merging to refresh imported modules.
 
 Run `python -m unittest -v test_goals test_overview test_overview_charts test_streamlit_v07_smoke`.
+
+
+## Live source health
+
+Overview shows current source freshness separately from historical analysis dates.
+Data & Sync shares the same source-specific checks. Garmin requests are checked
+per dataset (18-hour grace); Health Connect and Hevy allow 36 hours. Measurement
+dates are checked separately: two calendar days for daily sources, three for
+weight. Coverage counts seven completed local days, excluding today. Hevy workout,
+BP and body-fat dates are event-driven and do not trigger stale-sync warnings.
+
+Health Connect now records an unchanged-export check without reimporting the ZIP.
+Older entries record completed imports only. Hevy records last successful sync;
+failed attempts must still be inspected in GitHub Actions. The UI reads database
+markers, not a live GitHub API feed. No measurement or credential is sent to GitHub.

@@ -125,6 +125,7 @@ def main():
             ensure_schema(db)
         marker = fingerprint(latest)
         if previously_imported(db, marker) and not (args.force or args.preview):
+            log_import(db, SOURCE, 'drive_check', 0)
             print("Unchanged Drive export; skipping download and import.")
             return
         with tempfile.TemporaryDirectory(prefix="health_connect_") as temp_dir:
@@ -139,6 +140,7 @@ def main():
         total = nutrition + weights + extra["body_fat"] + extra["blood_pressure"]
         # Only successful imports receive the marker, permitting safe retries.
         log_import(db, SOURCE, marker, total)
+        log_import(db, SOURCE, 'drive_check', 0)
         print("Health Connect import completed:",
               {"nutrition": nutrition, "weights": weights,
                "body_fat": extra["body_fat"],
