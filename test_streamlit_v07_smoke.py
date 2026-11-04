@@ -59,9 +59,13 @@ class StreamlitUITests(unittest.TestCase):
             db.close()
             original=os.environ.get('NUTRITION_DB')
             original_url=os.environ.pop('DATABASE_URL',None)
+            original_goal=os.environ.get('CALORIE_GOAL')
+            os.environ['CALORIE_GOAL']='2550'
             os.environ['NUTRITION_DB']=str(file)
             try:
-                at=AppTest.from_file('app.py',default_timeout=45).run()
+                at=AppTest.from_file('app.py',default_timeout=45)
+                at.session_state['calorie_goal']=2550  # Older widget state must not override current target.
+                at.run()
                 self.assertFalse(at.exception, 'Streamlit failed to render: '+str(at.exception))
                 self.assertEqual([tab.label for tab in at.tabs],
                     ['Overview','Energy & Nutrition','Training','Recovery & Health','Data & Sync'])
@@ -76,10 +80,21 @@ class StreamlitUITests(unittest.TestCase):
                 at.number_input(key='overview_protein_goal').set_value(170).run()
                 self.assertFalse(at.exception)
                 self.assertEqual(at.number_input(key='overview_protein_goal').value,170)
+                self.assertEqual(at.number_input(key='current_calorie_target_v2').value,2800)
+                self.assertTrue(any('2,800-kcal target' in item.value for item in at.caption))
+                self.assertGreaterEqual(len(at.get('plotly_chart')),7)
+                at.number_input(key='current_calorie_target_v2').set_value(3000).run()
+                self.assertFalse(at.exception)
+                dietary=next(item.value for item in at.dataframe if 'Nutrient' in item.value.columns)
+                fiber=dietary.set_index('Nutrient').loc['Fiber','Reference']
+                self.assertIn('42.0',fiber)
+                self.assertTrue(any('3,000-kcal target' in item.value for item in at.caption))
             finally:
                 if original is None: os.environ.pop('NUTRITION_DB',None)
                 else: os.environ['NUTRITION_DB']=original
                 if original_url is not None: os.environ['DATABASE_URL']=original_url
+                if original_goal is None: os.environ.pop('CALORIE_GOAL',None)
+                else: os.environ['CALORIE_GOAL']=original_goal
 
 
 if __name__=='__main__':

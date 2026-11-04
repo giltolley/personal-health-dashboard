@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from dashboard_v08 import fmt
+from overview_charts import (bp_figure, activity_figure, nutrient_figure,
+                             lift_change_figure, training_weight_figure)
 from overview_metrics import (window, bp_summary, cardio_summary, sleep_summary,
                               nutrition_summary, training_summary)
 
@@ -33,6 +35,8 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
                    'Medication timing and morning/evening readings are not available in this import.')
         history=window(bp,end,28)
         if not history.empty and {'systolic','diastolic'}.issubset(history):
+            st.plotly_chart(bp_figure(bp,end),use_container_width=True)
+            st.caption('Reference lines apply separately: either component may be elevated. Missing dates remain gaps.')
             with st.expander('Recent blood-pressure readings'):
                 st.dataframe(history.sort_index(ascending=False),use_container_width=True)
         elif not bp.empty:
@@ -49,6 +53,7 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
         b.metric('Strength-training days',str(report['strength_days']))
         c.metric('Steps · daily average',fmt(report['steps']['mean']))
         d.metric('Resting heart rate · average',fmt(report['rhr']['mean'])+' bpm')
+        st.plotly_chart(activity_figure(report),use_container_width=True)
         if pd.isna(report['minutes']):
             decision('No recent intensity-minute values. Check Garmin coverage; activity duration alone does not establish aerobic intensity.')
         elif report['remaining']>0:
@@ -98,6 +103,21 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
         protein_goal=st.number_input('Personal protein reference (g/day)',min_value=50,max_value=250,
                                     value=160,step=5,key='overview_protein_goal')
         table,days=nutrition_summary(daily,end,calorie_goal,protein_goal)
+        st.write(f'**Current calorie target: {calorie_goal:,.0f} kcal/day** · change it in the sidebar.')
+        columns=st.columns(3)
+        for column,(field,label,target,direction,unit) in zip(columns,[
+            ('protein_g','Protein',protein_goal,'at least','g'),
+            ('fiber_g','Fiber',14*calorie_goal/1000,'at least','g'),
+            ('sodium_mg','Sodium',2300,'at most','mg')]):
+            with column:
+                if int(table.set_index('Nutrient').loc[label,'Days with values']):
+                    st.plotly_chart(nutrient_figure(daily,end,field,label,target,direction,unit),
+                                    use_container_width=True)
+                else:
+                    st.info(f'{label}: no usable values in the last 7 days.')
+        st.caption('Teal bars meet the displayed reference; amber bars fall outside it. '
+                   'Missing or incomplete days remain blank. Sodium uses an upper reference; '
+                   'protein and fiber use lower references.')
         st.dataframe(table.style.format({'Average':'{:,.1f}'},na_rep='—'),
                      hide_index=True,use_container_width=True)
         messages=[]
@@ -131,6 +151,19 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
         st.caption(f'28-day intake coverage: {energy["intake_days"]}/28 · Weight: {energy["weight_days"]}/28. '
                    'Lift comparisons use median eligible estimated 1RM in the latest 28 days '
                    'versus the preceding 28 days, with at least two sessions per lift in each window.')
+        weight_plot=training_weight_figure(weight,end)
+        lift_plot=lift_change_figure(lifts)
+        weight_column,lift_column=st.columns(2)
+        with weight_column:
+            if weight_plot is not None:
+                st.plotly_chart(weight_plot,use_container_width=True)
+            else:
+                st.info('Not enough recent weigh-ins for a smoothed weight chart.')
+        with lift_column:
+            if lift_plot is not None:
+                st.plotly_chart(lift_plot,use_container_width=True)
+            else:
+                st.info('Lift comparison needs at least two eligible sessions in each 28-day window.')
         if not lifts.empty:
             st.dataframe(lifts.style.format({'Median e1RM change (%)':'{:+.1f}'},na_rep='—'),
                          hide_index=True,use_container_width=True)

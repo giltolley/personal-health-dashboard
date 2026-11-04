@@ -46,3 +46,13 @@ calorie adjustments. Waist tracking is optional; lab imports are deferred.
 
 Run `python -m unittest -v test_overview test_streamlit_v07_smoke` to check
 thresholds, sparse records, nutrition aggregation, and all five rendered sections.
+
+
+The Overview includes BP trends with separate systolic/diastolic references,
+weekly aerobic/strength progress, daily nutrient bars with reference lines, and
+separate weight and lift-change charts. Unknown nutrient values and insufficient
+lift comparisons remain gaps rather than zero. The current calorie widget starts
+at the agreed 2,800 kcal target and can be adjusted in the sidebar. The legacy
+`CALORIE_GOAL` environment setting no longer overrides this widget; prior widget
+state is reset once by its new key. Changes apply across dietary references and
+energy charts for that browser session and are not saved as historical goals.

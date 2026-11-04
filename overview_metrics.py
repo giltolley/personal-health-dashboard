@@ -97,13 +97,17 @@ def cardio_summary(garmin, workouts, end):
             'prior_rhr':metric_summary(garmin,'resting_hr',pd.Timestamp(end)-pd.Timedelta(days=7),positive=True)}
 
 
-def nutrition_summary(daily, end, calorie_goal, protein_goal=150):
+def usable_nutrition(daily, end):
+    """Days passing the existing meal-record proxy, not verified complete intake."""
     week=window(daily,end,7)
-    # Same completeness proxy used by the existing TDEE helpers. Not proof of full logging.
     calories=week.get('calories',pd.Series(index=week.index,dtype=float))
     meals=week.get('meals',pd.Series(index=week.index,dtype=float))
     complete=pd.to_numeric(calories,errors='coerce').gt(0) & pd.to_numeric(meals,errors='coerce').ge(3)
-    usable=week.loc[complete]
+    return week.loc[complete]
+
+
+def nutrition_summary(daily, end, calorie_goal, protein_goal=160):
+    usable=usable_nutrition(daily,end)
     rows=[]
     for field,label,target,direction,unit in [
         ('protein_g','Protein',protein_goal,'at least','g'),
@@ -115,7 +119,7 @@ def nutrition_summary(daily, end, calorie_goal, protein_goal=150):
         rows.append({'Nutrient':label,'Average':float(values.mean()) if len(values) else np.nan,
             'Unit':unit,'Reference':f'{direction} {target:,.1f} {unit}',
             'Days with values':len(values),'Days meeting reference':int(met.sum())})
-    return pd.DataFrame(rows),int(complete.sum())
+    return pd.DataFrame(rows),len(usable)
 
 
 def training_summary(daily, weight, garmin, sets, end):

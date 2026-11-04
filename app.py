@@ -67,14 +67,16 @@ st.caption('Personal dashboard · Source-aware metrics · Missing records are no
 
 with st.sidebar:
     st.header('Calorie goal')
-    # Set these optionally through private Streamlit Secrets, never source.
+    # Current agreed target; legacy CALORIE_GOAL settings must not override it.
     calorie_goal=st.number_input('Current daily calorie target (kcal)',
         min_value=1000,max_value=6000,step=25,
-        value=int(os.environ.get('CALORIE_GOAL','2800')),key='calorie_goal')
+        value=2800,key='current_calorie_target_v2')
     calorie_tolerance=st.number_input('Goal range (± kcal)',
         min_value=0,max_value=500,step=25,
         value=int(os.environ.get('CALORIE_TOLERANCE','100')),key='calorie_tolerance')
-    st.caption('Manual reference target; not imported from Garmin or MyFitnessPal. '
+    st.caption('Starts at the current 2,800-kcal muscle-gain target; adjust above as needed. '
+               'This choice applies to dietary references and energy charts for this session. '
+               'Manual reference target; not imported from Garmin or MyFitnessPal. '
                'The current goal line is shown across the selected period, even if your historical goal differed.')
     st.divider()
     st.header('Data integrations')
