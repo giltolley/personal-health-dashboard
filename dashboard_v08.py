@@ -54,11 +54,22 @@ def weight_chart(weight, start, end, show_daily=False):
     return fig
 
 
-def calories_chart(daily, start, end, goal=None, tolerance=100, show_band=False):
+def calories_chart(daily, start, end, goal=None, tolerance=100, show_band=False, goal_history=None):
     history = rolling_calorie_frame(daily, end)
     subset = history.loc[str(start):str(end)] if not history.empty else history
     fig = go.Figure()
-    if show_band and goal is not None:
+    if show_band and goal_history is not None and not goal_history.empty:
+        from goals import targets_for_dates
+        targets=targets_for_dates(goal_history,subset.index)['calories']
+        fig.add_trace(go.Scatter(x=targets.index,y=targets-tolerance,mode='lines',
+            line=dict(width=0,shape='hv'),showlegend=False,hoverinfo='skip',connectgaps=False))
+        fig.add_trace(go.Scatter(x=targets.index,y=targets+tolerance,mode='lines',
+            line=dict(width=0,shape='hv'),fill='tonexty',fillcolor='rgba(80,150,110,.13)',
+            showlegend=False,hoverinfo='skip',connectgaps=False))
+        fig.add_trace(go.Scatter(x=targets.index,y=targets,mode='lines',
+            line=dict(shape='hv',dash='dot'),name='Saved calorie target',connectgaps=False,
+            hovertemplate='%{x|%b %d}: target %{y:,.0f} kcal<extra></extra>'))
+    elif show_band and goal is not None and goal_history is None:
         fig.add_hrect(y0=goal-tolerance, y1=goal+tolerance, line_width=0,
                       fillcolor="rgba(80,150,110,.13)",
                       annotation_text="Goal range",annotation_position="top left")

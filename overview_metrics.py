@@ -106,7 +106,7 @@ def usable_nutrition(daily, end):
     return week.loc[complete]
 
 
-def nutrition_summary(daily, end, calorie_goal, protein_goal=160):
+def nutrition_summary(daily, end, calorie_goal, protein_goal=160, goal_history=None):
     usable=usable_nutrition(daily,end)
     rows=[]
     for field,label,target,direction,unit in [
@@ -115,9 +115,17 @@ def nutrition_summary(daily, end, calorie_goal, protein_goal=160):
         ('sodium_mg','Sodium',2300,'at most','mg')]:
         values=measured(usable,field)
         values=values[values.ge(0)]
-        met=values.ge(target) if direction=='at least' else values.le(target)
+        if goal_history is not None and not goal_history.empty and field!='sodium_mg':
+            from goals import targets_for_dates
+            dated=targets_for_dates(goal_history,values.index)
+            references=dated.protein_g if field=='protein_g' else dated.calories*14/1000
+        else:
+            references=pd.Series(target,index=values.index,dtype=float)
+        comparable=references.notna()
+        met=(values.ge(references) if direction=='at least' else values.le(references)) & comparable
         rows.append({'Nutrient':label,'Average':float(values.mean()) if len(values) else np.nan,
-            'Unit':unit,'Reference':f'{direction} {target:,.1f} {unit}',
+            'Unit':unit,'Reference':f'{direction} {target:,.1f} {unit}' if pd.notna(target) else 'No dated reference',
+            'Days with reference':int(comparable.sum()),
             'Days with values':len(values),'Days meeting reference':int(met.sum())})
     return pd.DataFrame(rows),len(usable)
 

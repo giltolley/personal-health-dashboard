@@ -48,11 +48,24 @@ Run `python -m unittest -v test_overview test_streamlit_v07_smoke` to check
 thresholds, sparse records, nutrition aggregation, and all five rendered sections.
 
 
-The Overview includes BP trends with separate systolic/diastolic references,
-weekly aerobic/strength progress, daily nutrient bars with reference lines, and
-separate weight and lift-change charts. Unknown nutrient values and insufficient
-lift comparisons remain gaps rather than zero. The current calorie widget starts
-at the agreed 2,800 kcal target and can be adjusted in the sidebar. The legacy
-`CALORIE_GOAL` environment setting no longer overrides this widget; prior widget
-state is reset once by its new key. Changes apply across dietary references and
-energy charts for that browser session and are not saved as historical goals.
+The Overview includes BP trends, activity progress, daily nutrient bars and
+separate weight/lift charts. Missing values remain gaps.
+
+## Saved goals and phase history
+
+Goal snapshots are stored in `goal_history`, not in the repository or browser
+session. Effective dates drive historical calorie/fiber/protein references;
+corrections for an existing date append a revision. A known prior goal with an
+unknown start is displayed as context and is not extrapolated onto older dates.
+The analysis warns when a 28-day window spans target changes and withholds
+muscle-gain suggestions for other phases. Protein references are unknown until
+explicitly recorded; an old day's missing reference is not scored as failure.
+
+SQLite creates the goals table locally. Hosted PostgreSQL requires the protected
+schema in `goal_history_schema.sql` to be provisioned before deploying this code.
+Hosted editing is read-only by default: configure a private `GOAL_EDIT_TOKEN`
+Streamlit secret and enter it in the sidebar to save future changes. Never commit
+this password or personal goal entries. Local editing requires no password.
+Rerun or reboot the hosted app after merging to refresh imported modules.
+
+Run `python -m unittest -v test_goals test_overview test_overview_charts test_streamlit_v07_smoke`.

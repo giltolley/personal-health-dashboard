@@ -19,6 +19,8 @@ from dashboard_v08 import (fmt, summary, recent_logged_intake, recent_garmin,
 from dashboard_v09 import (ENERGY_SERIES, DEFAULT_ENERGY_SERIES,
     display_energy_frame, interactive_energy_figure, summarize_next_cycle, prescription,
     LIFTS)
+from goals import ensure_goals, read_goals, goal_at, window_context
+from goals_ui import goal_editor
 from overview import render_overview
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
@@ -31,6 +33,11 @@ db=initialize(DB)
 ensure_schema(db)
 ensure_hevy_schema(db)
 TODAY=pd.Timestamp.now(tz='America/New_York').date()
+ensure_goals(db)
+goal_history=read_goals(db)
+current_goal=goal_at(goal_history,TODAY)
+calorie_goal=int(current_goal.calories) if pd.notna(current_goal.calories) else 2800
+protein_goal=float(current_goal.protein_g) if pd.notna(current_goal.protein_g) else float('nan')
 
 def sql(query,params=()):return read_frame(db, query, params)
 
@@ -67,17 +74,13 @@ st.caption('Personal dashboard · Source-aware metrics · Missing records are no
 
 with st.sidebar:
     st.header('Calorie goal')
-    # Current agreed target; legacy CALORIE_GOAL settings must not override it.
-    calorie_goal=st.number_input('Current daily calorie target (kcal)',
-        min_value=1000,max_value=6000,step=25,
-        value=2800,key='current_calorie_target_v2')
+    st.metric('Saved current target',f'{calorie_goal:,.0f} kcal/day' if pd.notna(current_goal.calories) else 'Not recorded')
+    goal_editor(db,goal_history,TODAY,calorie_goal,protein_goal,HOSTED)
     calorie_tolerance=st.number_input('Goal range (± kcal)',
         min_value=0,max_value=500,step=25,
         value=int(os.environ.get('CALORIE_TOLERANCE','100')),key='calorie_tolerance')
-    st.caption('Starts at the current 2,800-kcal muscle-gain target; adjust above as needed. '
-               'This choice applies to dietary references and energy charts for this session. '
-               'Manual reference target; not imported from Garmin or MyFitnessPal. '
-               'The current goal line is shown across the selected period, even if your historical goal differed.')
+    st.caption('Goals are stored in the database. Historical dates use the goal effective then; '
+               'unknown dates are not assigned the current target.')
     st.divider()
     st.header('Data integrations')
     if HOSTED:
@@ -198,13 +201,16 @@ with pages[0]:
         st.info("Select an earlier date to see completed days.")
     else:
         render_overview(daily,weight,garmin,bp,hevy_workouts,hevy_sets,
-                        COMPLETED_END,calorie_goal)
+                        COMPLETED_END,calorie_goal,goal_history=goal_history)
 
 with pages[1]:
     st.subheader("Energy & Nutrition")
     if start>COMPLETED_END:
         st.info("No completed dates are selected.")
     else:
+        context=window_context(goal_history,COMPLETED_END)
+        if context['mixed']:
+            st.info('This 28-day window spans saved goal changes. The TDEE estimate describes a mixed period, not only your latest target.')
         m28=summary(daily,weight,garmin,COMPLETED_END,28)
         g28,n_garmin=recent_garmin(garmin,COMPLETED_END,28)
         m_intake,n_intake=recent_logged_intake(daily,COMPLETED_END,28)
@@ -247,10 +253,10 @@ with pages[1]:
             show_target=st.checkbox("Show goal range on daily bars",
                                     value=False,key="show_calorie_band")
             st.plotly_chart(calories_chart(daily,start,COMPLETED_END,
-                calorie_goal,calorie_tolerance,show_target),use_container_width=True)
+                calorie_goal,calorie_tolerance,show_target,goal_history=goal_history),use_container_width=True)
             st.caption(f"Logged days: {c7}/7 over the last week, {c30}/30 over the last month. "
                        "Averages are shown as numbers above rather than extra chart lines. "
-                       "The goal is a current manual reference, not an imported historical goal.")
+                       "Goal lines use saved effective dates. Dates without a known start remain unassigned.")
         else:
             st.plotly_chart(expenditure_chart(garmin,start,COMPLETED_END),
                             use_container_width=True)
