@@ -11,6 +11,7 @@ from datastore import connect
 from importer import SCHEMA as NUTRITION_SCHEMA
 from garmin_importer import SCHEMA as GARMIN_SCHEMA
 from hevy_importer import SCHEMA as HEVY_SCHEMA
+from goals import SCHEMA as GOAL_SCHEMA
 
 TABLE_KEYS = {
     'nutrition': ['record_id'], 'weights': ['record_id'],
@@ -21,6 +22,7 @@ TABLE_KEYS = {
     'hevy_sets': ['workout_id', 'exercise_index', 'set_index'],
     'hevy_sync_state': ['key'],
     'ingestion_log': ['run_id'],
+    'goal_history': ['event_id'],
 }
 
 
@@ -31,8 +33,17 @@ def migrate(source_file, destination, *, dry_run=False):
         if dry_run:
             return {table: source.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
                     for table in TABLE_KEYS if table in available}
-        for schema in (NUTRITION_SCHEMA, GARMIN_SCHEMA, HEVY_SCHEMA):
+        for schema in (NUTRITION_SCHEMA, GARMIN_SCHEMA, HEVY_SCHEMA, GOAL_SCHEMA):
             destination.executescript(schema)
+        if getattr(destination,'backend',None)=='postgresql':
+            # Restoring private application data must not expose new public tables.
+            api_roles=[row[0] for row in destination.execute(
+                "SELECT rolname FROM pg_roles WHERE rolname IN ('anon','authenticated')").fetchall()]
+            for table in TABLE_KEYS:
+                destination.execute(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY')
+                destination.execute(f'REVOKE ALL ON "{table}" FROM PUBLIC')
+                for role in api_roles:
+                    destination.execute(f'REVOKE ALL ON "{table}" FROM "{role}"')
         counts = {}
         # One transaction for all rows, protecting referential consistency.
         with destination:
@@ -57,7 +68,7 @@ def migrate(source_file, destination, *, dry_run=False):
                     count += 1
                 counts[table] = count
             # Explicit IDs in ingestion_log may leave the PG identity sequence behind.
-            if 'ingestion_log' in available:
+            if 'ingestion_log' in available and getattr(destination,'backend',None)=='postgresql':
                 destination.execute('''SELECT setval(pg_get_serial_sequence('ingestion_log','run_id'),
                    GREATEST(COALESCE((SELECT MAX(run_id) FROM ingestion_log), 0), 1), true)''')
         return counts

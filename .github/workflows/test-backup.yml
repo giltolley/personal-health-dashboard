@@ -1,0 +1,24 @@
+name: Validate private backup and restore utility
+on:
+  pull_request:
+    paths:
+      - 'backup_data.py'
+      - 'test_backup_data.py'
+      - 'migrate_sqlite_to_postgres.py'
+      - '.github/workflows/test-backup.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m py_compile backup_data.py migrate_sqlite_to_postgres.py
+      - run: python -m unittest -v test_backup_data

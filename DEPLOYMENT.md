@@ -1,3 +1,8 @@
+> Historical deployment notes below predate the current hosted app. The repository
+> is public; app visibility is independent. For current access and recovery
+> requirements, use [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md). Do not treat the older
+> private-repository or local-only Health Connect descriptions as current state.
+
 # Personal Health Dashboard v0.4 — Portable cloud preparation
 
 This release is a portability upgrade, **not yet a confirmed live cloud deployment**.

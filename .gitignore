@@ -27,3 +27,6 @@ backups/
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Portable private application backups
+*.health-backup.json.gz
