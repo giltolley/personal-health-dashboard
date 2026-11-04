@@ -14,7 +14,15 @@ def decision(text):
     st.write('**Next step:** '+text)
 
 
-def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal):
+def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal, goal_history=None):
+    protein_goal=160
+    goal_context=None
+    if goal_history is not None and not goal_history.empty:
+        from goals import goal_at,window_context
+        selected_goal=goal_at(goal_history,end)
+        calorie_goal=selected_goal.calories
+        protein_goal=selected_goal.protein_g
+        goal_context=window_context(goal_history,end)
     st.caption(f'Reviewing completed days through {end:%b %d, %Y}. '
                'Weekly cards use the last 7 calendar days; training uses 28-day windows. '
                'Earlier chart start dates do not change these windows.')
@@ -100,10 +108,8 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
     with st.container(border=True):
         st.subheader('4. Dietary Analysis')
         st.caption('Question: Which recurring dietary gap should I address?')
-        protein_goal=st.number_input('Personal protein reference (g/day)',min_value=50,max_value=250,
-                                    value=160,step=5,key='overview_protein_goal')
-        table,days=nutrition_summary(daily,end,calorie_goal,protein_goal)
-        st.write(f'**Current calorie target: {calorie_goal:,.0f} kcal/day** · change it in the sidebar.')
+        table,days=nutrition_summary(daily,end,calorie_goal,protein_goal,goal_history)
+        st.write('**Target on selected end date: '+fmt(calorie_goal)+' kcal/day** · edit saved goals in the sidebar.')
         columns=st.columns(3)
         for column,(field,label,target,direction,unit) in zip(columns,[
             ('protein_g','Protein',protein_goal,'at least','g'),
@@ -111,18 +117,19 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
             ('sodium_mg','Sodium',2300,'at most','mg')]):
             with column:
                 if int(table.set_index('Nutrient').loc[label,'Days with values']):
-                    st.plotly_chart(nutrient_figure(daily,end,field,label,target,direction,unit),
+                    st.plotly_chart(nutrient_figure(daily,end,field,label,target,direction,unit,goal_history),
                                     use_container_width=True)
                 else:
                     st.info(f'{label}: no usable values in the last 7 days.')
         st.caption('Teal bars meet the displayed reference; amber bars fall outside it. '
                    'Missing or incomplete days remain blank. Sodium uses an upper reference; '
-                   'protein and fiber use lower references.')
+                   'protein and fiber use lower references. Blue bars have no dated reference. '
+                   'Dotted lines follow the goal saved for each date.')
         st.dataframe(table.style.format({'Average':'{:,.1f}'},na_rep='—'),
                      hide_index=True,use_container_width=True)
         messages=[]
         for _,row in table.iterrows():
-            if row['Days with values']>=5 and row['Days meeting reference']<row['Days with values']/2:
+            if row['Days with reference']>=5 and row['Days meeting reference']<row['Days with reference']/2:
                 messages.append({'Fiber':'Add a regular fiber source such as oats, beans, fruit or vegetables.',
                     'Protein':'Review protein portions or add a convenient protein source.',
                     'Sodium':'Review recurring high-sodium foods, particularly if BP is elevated.'}[row['Nutrient']])
@@ -132,8 +139,8 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
                    'This is not proof of full logging. Each nutrient has its own coverage. '
                    'Any NULL meal nutrient makes that day unknown; numeric zeros supplied by a food entry '
                    'cannot be distinguished from omitted nutrient information. Food-entry quality still matters.')
-        st.caption(f'Fiber reference: 14 g/1,000 kcal × current {calorie_goal:,.0f}-kcal target. '
-                   'Protein is an adjustable personal reference, not a medical minimum. '
+        st.caption(f'Fiber reference: 14 g/1,000 kcal × {fmt(calorie_goal)}-kcal target on the selected end date. '
+                   'Protein uses its saved dated reference, not a medical minimum. '
                    'Sodium reference: 2,300 mg/day; individual targets may differ. '
                    'These are intake references, not conclusions from blood electrolyte levels.')
         st.markdown('[Fiber reference · NIH](https://www.niddk.nih.gov/health-information/digestive-diseases/hemorrhoids/eating-diet-nutrition) · '
@@ -141,12 +148,21 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
 
     with st.container(border=True):
         st.subheader('5. Intake vs. Training Heuristics')
-        st.caption('Question: Is my current intake supporting my muscle-gain goal?')
+        phase=goal_context['target'].phase if goal_context else 'Muscle gain'
+        st.caption('Question: Is intake supporting the selected phase? Phase: '+
+                   (phase if pd.notna(phase) else 'Unknown'))
         energy,lifts,action=training_summary(daily,weight,garmin,sets,end)
         a,b,c=st.columns(3)
         a.metric('Logged intake · 28-day average',fmt(energy['average_intake'])+' kcal')
         b.metric('Weight trend · 28 days',fmt(energy['trend_lb_week'],2)+' lb/week' if energy['valid'] else '—')
-        c.metric('Current intake target',f'{calorie_goal:,.0f} kcal')
+        c.metric('Target on selected end date',fmt(calorie_goal)+' kcal')
+        if goal_context and goal_context['mixed']:
+            action=('This 28-day window spans goal changes. Only '
+                    f'{goal_context["days_on_target"]} completed days use the target on the selected end date. '
+                    'Allow several weeks on the new target before changing calories based on this comparison.')
+        elif goal_context and (pd.isna(phase) or phase!='Muscle gain'):
+            action=('This period is not recorded as muscle gain. Review the weight trend against '
+                    'your intended phase; muscle-gain calorie suggestions are withheld.')
         decision(action)
         st.caption(f'28-day intake coverage: {energy["intake_days"]}/28 · Weight: {energy["weight_days"]}/28. '
                    'Lift comparisons use median eligible estimated 1RM in the latest 28 days '
@@ -176,4 +192,4 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
                    'Optional waist measurements every 2–4 weeks can add context; they are not required. '
                    'No precise muscle/fat split or daily surplus is inferred.')
         st.caption('Use Energy & Nutrition for calorie, weight and TDEE charts; Training for individual lifts. '
-                   'The current target is a manual reference, not a historical diet-phase record.')
+                   'Targets follow saved effective dates; unknown starting dates are not extrapolated.')

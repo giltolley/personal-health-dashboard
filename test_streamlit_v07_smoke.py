@@ -55,6 +55,9 @@ class StreamlitUITests(unittest.TestCase):
                  (workout_id,exercise_index,set_index,set_type,weight_kg,reps,rpe,
                   distance_meters,duration_seconds,custom_metric) VALUES(?,?,?,?,?,?,?,?,?,?)''',
                  ('synthetic-workout',0,0,'normal',70,5,8,None,None,None))
+            from goals import ensure_goals,save_goal
+            ensure_goals(db)
+            save_goal(db,(today-timedelta(days=20)).isoformat(),'Muscle gain',2800,160)
             db.commit()
             db.close()
             original=os.environ.get('NUTRITION_DB')
@@ -77,18 +80,19 @@ class StreamlitUITests(unittest.TestCase):
                 self.assertTrue(any('Stage 1 range' in item.value for item in at.markdown))
                 self.assertTrue(any('Personal minimum met' in item.value for item in at.markdown))
                 self.assertTrue(any('Intensity-minute coverage: 7/7' in item.value for item in at.caption))
-                at.number_input(key='overview_protein_goal').set_value(170).run()
-                self.assertFalse(at.exception)
-                self.assertEqual(at.number_input(key='overview_protein_goal').value,170)
-                self.assertEqual(at.number_input(key='current_calorie_target_v2').value,2800)
-                self.assertTrue(any('2,800-kcal target' in item.value for item in at.caption))
+                self.assertEqual(at.number_input(key='goal_calories').value,2800)
                 self.assertGreaterEqual(len(at.get('plotly_chart')),7)
-                at.number_input(key='current_calorie_target_v2').set_value(3000).run()
+                at.date_input(key='goal_effective_date').set_value(today-timedelta(days=1))
+                at.number_input(key='goal_calories').set_value(3000)
+                at.number_input(key='goal_protein').set_value(170)
+                next(button for button in at.button if button.label=='Save dated goal').click().run()
                 self.assertFalse(at.exception)
                 dietary=next(item.value for item in at.dataframe if 'Nutrient' in item.value.columns)
-                fiber=dietary.set_index('Nutrient').loc['Fiber','Reference']
-                self.assertIn('42.0',fiber)
+                self.assertIn('42.0',dietary.set_index('Nutrient').loc['Fiber','Reference'])
                 self.assertTrue(any('3,000-kcal target' in item.value for item in at.caption))
+                verify=sqlite3.connect(file)
+                self.assertEqual(verify.execute('SELECT COUNT(*) FROM goal_history').fetchone()[0],2)
+                verify.close()
             finally:
                 if original is None: os.environ.pop('NUTRITION_DB',None)
                 else: os.environ['NUTRITION_DB']=original

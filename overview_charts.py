@@ -58,17 +58,29 @@ def activity_figure(report):
     return layout(fig,'Weekly activity · recorded progress',310)
 
 
-def nutrient_figure(daily,end,field,label,target,direction,unit):
+def nutrient_figure(daily,end,field,label,target,direction,unit,goal_history=None):
     values=measured(usable_nutrition(daily,end),field)
     values=values[values.ge(0)].groupby(level=0).mean()
     dates=pd.date_range(end=pd.Timestamp(end),periods=7)
     values=values.reindex(dates)
-    colors=[TEAL if pd.notna(v) and (v>=target if direction=='at least' else v<=target)
-            else AMBER for v in values]
+    references=pd.Series(target,index=dates,dtype=float)
+    if goal_history is not None and not goal_history.empty and field!='sodium_mg':
+        from goals import targets_for_dates
+        dated=targets_for_dates(goal_history,dates)
+        references=dated.protein_g if field=='protein_g' else dated.calories*14/1000
+    colors=[BLUE if pd.isna(ref) else TEAL if pd.notna(v) and
+            (v>=ref if direction=='at least' else v<=ref) else AMBER
+            for v,ref in zip(values,references)]
     fig=go.Figure(go.Bar(x=dates,y=values,marker_color=colors,
         hovertemplate=f'%{{x|%b %d}}: %{{y:,.1f}} {unit}<extra></extra>'))
-    fig.add_hline(y=target,line_dash='dot',line_color=BLUE,
-                  annotation_text=f'{direction} {target:,.1f} {unit}')
+    if goal_history is None:
+        if pd.notna(target):
+            fig.add_hline(y=target,line_dash='dot',line_color=BLUE,
+                          annotation_text=f'{direction} {target:,.1f} {unit}')
+    elif references.notna().any():
+        fig.add_trace(go.Scatter(x=dates,y=references,mode='lines',connectgaps=False,
+            line=dict(color=BLUE,dash='dot',shape='hv'),name=f'{direction} reference',
+            hovertemplate=f'%{{x|%b %d}}: reference %{{y:.1f}} {unit}<extra></extra>'))
     fig.update_yaxes(title_text=unit,rangemode='tozero')
     fig.update_xaxes(tickformat='%b %d',dtick=86400000)
     return layout(fig,label+' · daily',260)
