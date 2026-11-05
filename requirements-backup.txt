@@ -1,0 +1,3 @@
+-r requirements-health-connect.txt
+PyNaCl==1.6.2
+google-auth-oauthlib>=1.2,<2

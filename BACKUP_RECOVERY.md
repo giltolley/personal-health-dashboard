@@ -68,18 +68,98 @@ destination: upserts into an existing database do not remove unrelated rows and
 are not an exact rollback. Compare counts and dated goals afterward; test the
 app against the replacement before changing production connection settings.
 
-## Remaining operational requirements
+## Daily encrypted Google Drive backups
 
-- Verify deployed Streamlit visibility and the viewer list while signed in.
-- Test signed-out access to the exact deployed URL.
-- Choose protected off-site storage and retention before scheduling backups.
-- Configure recurring exports and monitor failures; no recurring backup is
-  enabled by adding this utility.
-- Run a full PostgreSQL recovery drill when direct database credentials and an
-  isolated PostgreSQL target are available.
+The prepared workflow `.github/workflows/backup-drive.yml` runs daily at 05:47
+America/New_York and supports manual runs. It remains disabled until the setup
+below is complete and ENABLE_DRIVE_BACKUPS is true. GitHub may delay scheduled
+runs; the selected time is not an exact completion guarantee.
 
-Supabase free projects should maintain their own off-site logical exports:
-https://supabase.com/docs/guides/platform/backups
+Each run exports a consistent snapshot, restores it in an isolated temporary
+SQLite file, checks integrity/hashes/links, encrypts the archive using libsodium
+sealed boxes, uploads only encrypted bytes to the private backup folder, and
+downloads the uploaded file to verify its SHA-256. Only after successful
+verification does it move this app's backups older than 30 days to Drive Trash.
+It never permanently deletes files or touches unrelated Drive files. Plaintext
+files are confined to the runner's temporary directory and cleaned on exit. No
+backup payload is stored as a GitHub artifact, release, or repository file.
 
-Streamlit access settings:
-https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/app-settings
+The private decryption key stays on your computer/in your password manager.
+GitHub receives only the public encryption key. Losing the private key makes
+the encrypted archives unrecoverable; keep a second protected copy. The workflow
+also needs its existing DATABASE_URL secret and a Google offline authorization
+secret. A scheduled runner necessarily has access to the live database, so review
+changes to the workflow before merging them.
+
+### One-time setup on your computer
+
+1. In your existing Google Cloud project, ensure Drive API is enabled. Create an
+   OAuth client with application type **Desktop app** and download its JSON to a
+   private local directory. Use only the `drive.file` scope, which limits access
+   to files created/opened through this app. Do not use a service account for a
+   personal My Drive destination: service accounts cannot own new files there.
+2. Configure the OAuth app for personal ongoing use. A project left in external
+   **Testing** issues refresh tokens that expire after seven days for this scope.
+   Use **In production** before authorizing for ongoing backups; then authorize
+   only your own account. If you change publishing state later, authorize again.
+3. From the checked-out repository, run:
+
+```powershell
+py -3.12 -m pip install -r requirements-backup.txt
+py -3.12 setup_drive_backup.py --client C:\private\oauth-client.json
+```
+
+The helper opens Google's normal consent flow on your computer, creates a new
+private **Personal Health Dashboard Backups** folder, and writes three files in
+`backups/setup/`. It refuses to reuse an existing output directory or overwrite
+keys. If setup is interrupted, use a new `--output-dir` for a subsequent attempt.
+No credential values are printed.
+
+4. Keep **backup-private.key** offline/in your password manager; never add it to
+   GitHub, Actions secrets or the backup folder. Keep another safe copy.
+5. In repository **Settings → Secrets and variables → Actions**, add:
+
+| Setting | Type | Value |
+|---|---|---|
+| BACKUP_DRIVE_AUTH_JSON | Secret | Entire contents of drive-backup-auth.json |
+| BACKUP_PUBLIC_KEY | Secret | Contents of backup-public.txt |
+| ENABLE_DRIVE_BACKUPS | Variable | true |
+
+DATABASE_URL is reused from the existing sync jobs. Do not paste any credentials
+or keys into chat or source code. The folder ID is already inside the private
+authorization JSON. No new sharing with the existing Health Connect service
+account is needed, and its read-only access remains unchanged.
+
+6. Merge the backup PR, manually run **Daily encrypted Drive backup**, and verify
+   success plus a new `.health-backup.enc` file in the created Drive folder. Only
+   this live run verifies your OAuth authorization and actual Drive destination.
+   Enable GitHub Actions failure notifications for this repository in your own
+   notification settings. A merged but disabled workflow is not an active backup.
+
+### Recover an encrypted backup
+
+Download a `.health-backup.enc` file privately from Drive, then run locally:
+
+```powershell
+py -3.12 backup_crypto.py --input downloaded.health-backup.enc --private-key backups/setup/backup-private.key --output backups/recovered.health-backup.json.gz
+py -3.12 backup_data.py restore-sqlite --backup backups/recovered.health-backup.json.gz --destination backups/recovery-check.sqlite
+```
+
+Both commands refuse to overwrite an existing output. The existing hosted
+migration instructions above apply after successful local verification.
+
+## Accepted scope and remaining activation
+
+The owner will review Streamlit viewer access. The owner has deferred the full
+PostgreSQL disaster-recovery drill; the application-data restore test is the
+accepted recovery check for this release. Recurring Drive backups are not active
+until private OAuth setup, Actions settings and the first verified live run are
+complete. No hosting permissions or recurring settings were changed by writing
+this code.
+
+References:
+- https://supabase.com/docs/guides/platform/backups
+- https://developers.google.com/workspace/drive/api/guides/folder
+- https://developers.google.com/identity/protocols/oauth2/
+- https://developers.google.com/workspace/drive/api/guides/api-specific-auth
+- https://pynacl.readthedocs.io/en/latest/public/
