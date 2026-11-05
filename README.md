@@ -1,6 +1,6 @@
-# Personal Health Dashboard · 1.0.0
+# Personal Health Dashboard · 1.1.0
 
-A personal health dashboard with a decision-focused Overview, nutrition and energy analysis, training and recovery views, saved goal history, and a 5/3/1 next-cycle planner. Supports local SQLite and hosted PostgreSQL through `DATABASE_URL`. Ingestion runs separately from the Streamlit UI.
+A personal health dashboard with a decision-focused Overview, nutrition and energy analysis, training and recovery views, laboratory history and comparisons, saved goal history, and a 5/3/1 next-cycle planner. Supports local SQLite and hosted PostgreSQL through `DATABASE_URL`. Ingestion runs separately from the Streamlit UI.
 
 **Start here:** [DEPLOYMENT.md](DEPLOYMENT.md) for the current architecture and configuration, [CHANGELOG.md](CHANGELOG.md) for release notes, and [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for recovery.
 
@@ -103,7 +103,7 @@ Tests use synthetic fixtures; keep production credentials out of the test enviro
 The app displays the release version from `version.py`; historical module/test
 filenames are retained for compatibility.
 
-## Laboratory history
+## Laboratory history (added in 1.1.0)
 
 The Labs tab groups results by collection and panel, independently of the daily
 start/end date filters. It preserves text, intervals, inequalities, units and
@@ -133,5 +133,11 @@ Changes themselves are not colored as improvements or deterioration.
 
 
 Backups include collections, panels and results in format version 2; version 1
-backups remain readable. Run `python -m unittest -v test_labs test_backup_data
-test_backup_artifact test_streamlit_v07_smoke` for synthetic validation.
+backups remain readable. Backup format version 2 is independent of product
+version 1.1.0; older backups cannot contain laboratory records added later.
+
+Run synthetic Labs and recovery checks with:
+
+```powershell
+python -m unittest -v test_labs test_backup_data test_backup_artifact test_streamlit_v07_smoke
+```

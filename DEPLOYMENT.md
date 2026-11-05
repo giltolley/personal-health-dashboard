@@ -1,11 +1,11 @@
 # Personal Health Dashboard deployment
 
-## Current architecture (1.0.0)
+## Current architecture (1.1.0)
 
 | Component | Responsibility |
 |---|---|
 | Streamlit Community Cloud | Invitation-only dashboard and protected goal editor |
-| PostgreSQL | Persistent application measurements, goals and sync markers |
+| PostgreSQL | Persistent measurements, laboratory history, goals and sync markers |
 | GitHub repository | Public source code; no plaintext health exports or credentials |
 | GitHub Actions | Source ingestion and encrypted application-data backups |
 | Google Drive | Health Connect ZIP source, read through a folder-scoped service account |
@@ -43,6 +43,13 @@ The app initializes application schemas at startup. Provision the protected
 `goal_history_schema.sql` before deploying saved-goal functionality. Browser API
 roles must not have access to application tables. See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md)
 for access boundaries and replacement-database migration instructions.
+
+Version 1.1.0 adds private laboratory tables. Provision `lab_schema.sql` before
+deploying Labs to a new hosted database; it enables RLS and revokes browser API
+access. SQLite initializes these tables automatically. Existing installations
+with lab tables do not need a new migration for the 1.1.0 version update.
+After adding labs, verify a backup run includes the new schema; the original
+1.0 live-run check predates lab support.
 
 ### GitHub Actions configuration
 

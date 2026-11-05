@@ -1,8 +1,8 @@
 # Access and application-data recovery
 
-## 1.0 operational status
+## Operational status
 
-The owner confirmed invitation-only Streamlit viewing. The first live backup
+For 1.0, the owner confirmed invitation-only Streamlit viewing. The first live backup
 completed successfully, including isolated restore validation, encryption,
 artifact upload, download and checksum verification. The daily schedule is
 configured. Monitor scheduled runs and keep the private decryption key protected.
@@ -27,6 +27,11 @@ server-only application using an appropriately configured database role. A
 separate least-privilege UI credential has not yet been verified. The app still
 performs schema initialization at startup; switching it to a read-only database
 role requires separating that initialization first.
+
+Version 1.1.0 adds three laboratory tables and backup format version 2. The
+original live-run check above predates labs; verify a post-labs backup run when
+checking that laboratory history is covered. Product and backup-format versions
+are independent. Version 1 archives remain readable but contain no lab tables.
 
 ## What this backup covers
 

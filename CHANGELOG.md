@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-11-05
+
+Adds laboratory history and collection comparison to the existing dashboard.
+This is an additive minor release; the 1.0.0 release remains unchanged.
+
+### Added
 
 - Add side-by-side lab collection comparison with panel-aware test matching,
   original ranges on both sides, exact numeric differences for matching units,
@@ -15,6 +20,16 @@
   access; include all three tables in encrypted backups and recovery migration.
 - Keep version 1 backups readable while exporting format version 2 when lab
   tables are present.
+
+### Deployment and compatibility
+
+- Hosted deployments require `lab_schema.sql`; SQLite initializes lab tables
+  automatically. Existing deployments with those tables need no further schema
+  change for this version/documentation update.
+- Personal results and source transcriptions stay in the private database.
+  Automated PDF/email ingestion and clinical diagnosis remain outside this release.
+- Product version 1.1.0 and backup format version 2 are separate version schemes.
+  Version 1 backups remain readable but do not include lab history.
 
 ## 1.0.0 — 2026-11-04
 
