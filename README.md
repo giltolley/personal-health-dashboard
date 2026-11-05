@@ -89,6 +89,7 @@ markers, not a live GitHub API feed. No measurement or credential is sent to Git
 See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for private application-data export, isolated restore verification, access checks and remaining operational requirements.
 
 
-Daily encrypted Google Drive backups are prepared in `.github/workflows/backup-drive.yml`.
-They require one-time private OAuth setup and explicit ENABLE_DRIVE_BACKUPS=true;
-see BACKUP_RECOVERY.md. The Health Connect read-only service account is unchanged.
+Daily encrypted GitHub artifact backups are prepared in `.github/workflows/backup-artifact.yml`.
+Add the nonsecret BACKUP_PUBLIC_KEY repository variable to enable the schedule;
+keep its matching private key outside GitHub. See BACKUP_RECOVERY.md for activation,
+30-day retention, verification and recovery instructions.

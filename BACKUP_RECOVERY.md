@@ -68,98 +68,61 @@ destination: upserts into an existing database do not remove unrelated rows and
 are not an exact rollback. Compare counts and dated goals afterward; test the
 app against the replacement before changing production connection settings.
 
-## Daily encrypted Google Drive backups
+## Daily encrypted GitHub artifacts
 
-The prepared workflow `.github/workflows/backup-drive.yml` runs daily at 05:47
-America/New_York and supports manual runs. It remains disabled until the setup
-below is complete and ENABLE_DRIVE_BACKUPS is true. GitHub may delay scheduled
-runs; the selected time is not an exact completion guarantee.
+The workflow `.github/workflows/backup-artifact.yml` runs daily at 05:47
+America/New_York and supports manual runs. Scheduled runs may be delayed.
+It remains disabled until the BACKUP_PUBLIC_KEY repository variable is present.
 
-Each run exports a consistent snapshot, restores it in an isolated temporary
-SQLite file, checks integrity/hashes/links, encrypts the archive using libsodium
-sealed boxes, uploads only encrypted bytes to the private backup folder, and
-downloads the uploaded file to verify its SHA-256. Only after successful
-verification does it move this app's backups older than 30 days to Drive Trash.
-It never permanently deletes files or touches unrelated Drive files. Plaintext
-files are confined to the runner's temporary directory and cleaned on exit. No
-backup payload is stored as a GitHub artifact, release, or repository file.
+Each run exports a consistent snapshot, verifies an isolated SQLite restore,
+encrypts the archive using libsodium sealed boxes, uploads only ciphertext as a
+GitHub Actions artifact with 30-day retention, downloads it again and verifies
+its exact SHA-256. Plaintext stays in a temporary directory. Public-repository
+artifacts are accessible to signed-in readers, so only encrypted files may be
+uploaded. The private decryption key never belongs on GitHub. Losing that key
+makes these archives unrecoverable; keep two protected copies.
 
-The private decryption key stays on your computer/in your password manager.
-GitHub receives only the public encryption key. Losing the private key makes
-the encrypted archives unrecoverable; keep a second protected copy. The workflow
-also needs its existing DATABASE_URL secret and a Google offline authorization
-secret. A scheduled runner necessarily has access to the live database, so review
-changes to the workflow before merging them.
+### One-time activation
 
-### One-time setup on your computer
+1. Obtain a key pair privately. If generating your own, install
+   `requirements-backup.txt` and run `python backup_crypto.py --generate-keys backups/keys`.
+   This creates a new directory and refuses to overwrite an existing one.
+2. Save Health_Dashboard_Backup_Private_Key.txt in your password manager and keep
+   a second protected copy. Never upload it to GitHub.
+3. Merge the backup PR. In repository Settings → Secrets and variables → Actions
+   → Variables, create **BACKUP_PUBLIC_KEY** using the public-key file's contents.
+   This is a nonsecret repository variable. The existing DATABASE_URL Actions
+   secret is reused; no Google authorization or new credential is needed.
+4. Under Actions, manually run **Daily encrypted database backup**. Confirm the
+   entire run passes and contains an encrypted-health-backup artifact. This is
+   required to verify actual database access and artifact storage. Adding the
+   variable also enables the daily schedule; code alone does not activate it.
+5. Enable Actions failure notifications in your GitHub notification settings.
+   Public-repository schedules can be disabled after 60 days without repository
+   activity. Check the run history periodically. Artifacts expire after 30 days;
+   download a protected copy if a longer recovery window is needed.
 
-1. In your existing Google Cloud project, ensure Drive API is enabled. Create an
-   OAuth client with application type **Desktop app** and download its JSON to a
-   private local directory. Use only the `drive.file` scope, which limits access
-   to files created/opened through this app. Do not use a service account for a
-   personal My Drive destination: service accounts cannot own new files there.
-2. Configure the OAuth app for personal ongoing use. A project left in external
-   **Testing** issues refresh tokens that expire after seven days for this scope.
-   Use **In production** before authorizing for ongoing backups; then authorize
-   only your own account. If you change publishing state later, authorize again.
-3. From the checked-out repository, run:
+To pause future backups, delete BACKUP_PUBLIC_KEY. Existing artifacts retain their
+expiry. Review workflow changes before merging: the scheduled job reads live data.
+CI exercises upload/download using synthetic encrypted data without production
+credentials. A full PostgreSQL restore drill remains deferred by the owner.
+
+### Recover an encrypted artifact
+
+Open a successful backup run in Actions and download its encrypted-health-backup
+artifact. Extract the ZIP to obtain dashboard.health-backup.enc, then run locally:
 
 ```powershell
 py -3.12 -m pip install -r requirements-backup.txt
-py -3.12 setup_drive_backup.py --client C:\private\oauth-client.json
-```
-
-The helper opens Google's normal consent flow on your computer, creates a new
-private **Personal Health Dashboard Backups** folder, and writes three files in
-`backups/setup/`. It refuses to reuse an existing output directory or overwrite
-keys. If setup is interrupted, use a new `--output-dir` for a subsequent attempt.
-No credential values are printed.
-
-4. Keep **backup-private.key** offline/in your password manager; never add it to
-   GitHub, Actions secrets or the backup folder. Keep another safe copy.
-5. In repository **Settings → Secrets and variables → Actions**, add:
-
-| Setting | Type | Value |
-|---|---|---|
-| BACKUP_DRIVE_AUTH_JSON | Secret | Entire contents of drive-backup-auth.json |
-| BACKUP_PUBLIC_KEY | Secret | Contents of backup-public.txt |
-| ENABLE_DRIVE_BACKUPS | Variable | true |
-
-DATABASE_URL is reused from the existing sync jobs. Do not paste any credentials
-or keys into chat or source code. The folder ID is already inside the private
-authorization JSON. No new sharing with the existing Health Connect service
-account is needed, and its read-only access remains unchanged.
-
-6. Merge the backup PR, manually run **Daily encrypted Drive backup**, and verify
-   success plus a new `.health-backup.enc` file in the created Drive folder. Only
-   this live run verifies your OAuth authorization and actual Drive destination.
-   Enable GitHub Actions failure notifications for this repository in your own
-   notification settings. A merged but disabled workflow is not an active backup.
-
-### Recover an encrypted backup
-
-Download a `.health-backup.enc` file privately from Drive, then run locally:
-
-```powershell
-py -3.12 backup_crypto.py --input downloaded.health-backup.enc --private-key backups/setup/backup-private.key --output backups/recovered.health-backup.json.gz
+py -3.12 backup_crypto.py --input dashboard.health-backup.enc --private-key C:\private\Health_Dashboard_Backup_Private_Key.txt --output backups/recovered.health-backup.json.gz
 py -3.12 backup_data.py restore-sqlite --backup backups/recovered.health-backup.json.gz --destination backups/recovery-check.sqlite
 ```
 
-Both commands refuse to overwrite an existing output. The existing hosted
-migration instructions above apply after successful local verification.
-
-## Accepted scope and remaining activation
-
-The owner will review Streamlit viewer access. The owner has deferred the full
-PostgreSQL disaster-recovery drill; the application-data restore test is the
-accepted recovery check for this release. Recurring Drive backups are not active
-until private OAuth setup, Actions settings and the first verified live run are
-complete. No hosting permissions or recurring settings were changed by writing
-this code.
+Commands refuse to overwrite existing files. Use the replacement-database
+migration steps above after successful local verification. The owner handles the
+Streamlit access review. Activation and the first live run remain owner steps.
 
 References:
-- https://supabase.com/docs/guides/platform/backups
-- https://developers.google.com/workspace/drive/api/guides/folder
-- https://developers.google.com/identity/protocols/oauth2/
-- https://developers.google.com/workspace/drive/api/guides/api-specific-auth
+- https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts
+- https://docs.github.com/en/actions/managing-workflow-runs/disabling-and-enabling-a-workflow
 - https://pynacl.readthedocs.io/en/latest/public/

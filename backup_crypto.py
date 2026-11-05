@@ -30,13 +30,31 @@ def private_write(path,data):
         stream.write(data)
 
 
+def save_key_pair(directory):
+    root=Path(directory)
+    root.mkdir(parents=True,mode=0o700,exist_ok=False)
+    private,public=generate_keys()
+    private_write(root/'Health_Dashboard_Backup_Private_Key.txt',(private+'\n').encode())
+    private_write(root/'Health_Dashboard_Backup_Public_Key.txt',(public+'\n').encode())
+    return public
+
+
 if __name__=='__main__':
     import argparse
-    parser=argparse.ArgumentParser(description='Decrypt a backup locally; never upload the private key.')
-    parser.add_argument('--input',required=True)
-    parser.add_argument('--private-key',required=True)
-    parser.add_argument('--output',required=True)
+    parser=argparse.ArgumentParser(description='Generate backup keys or decrypt a backup locally.')
+    parser.add_argument('--generate-keys',metavar='NEW_DIRECTORY')
+    parser.add_argument('--input')
+    parser.add_argument('--private-key')
+    parser.add_argument('--output')
     args=parser.parse_args()
-    clear=decrypt(Path(args.input).read_bytes(),Path(args.private_key).read_text())
-    private_write(args.output,clear)
-    print('Decrypted backup saved. Verify with backup_data.py restore-sqlite.')
+    if args.generate_keys:
+        if any([args.input,args.private_key,args.output]):
+            parser.error('Key generation cannot be combined with decryption.')
+        save_key_pair(args.generate_keys)
+        print('Key pair saved. Keep the private key out of GitHub; add only the public key to BACKUP_PUBLIC_KEY.')
+    else:
+        if not all([args.input,args.private_key,args.output]):
+            parser.error('Decryption requires --input, --private-key and --output.')
+        clear=decrypt(Path(args.input).read_bytes(),Path(args.private_key).read_text())
+        private_write(args.output,clear)
+        print('Decrypted backup saved. Verify with backup_data.py restore-sqlite.')
