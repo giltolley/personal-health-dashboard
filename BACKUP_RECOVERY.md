@@ -30,14 +30,15 @@ role requires separating that initialization first.
 
 ## What this backup covers
 
-`backup_data.py` exports all 13 application tables, including saved goals, source
+`backup_data.py` exports all 16 application tables, including laboratory collections, panels and results, saved goals, source
 markers and ingestion logs, to a checksummed gzip JSON archive. It contains
 private health data. It is compressed, **not encrypted**: use protected storage
 and never attach it to a public GitHub issue, release or workflow artifact.
 
 The restore command creates a new SQLite file, reconstructs the application's
 schema, checks row counts and checksums, runs SQLite integrity_check, and checks
-Hevy workout/exercise/set links. It refuses to overwrite existing files. It never
+Hevy workout/exercise/set links and laboratory collection/panel/result links.
+Version 2 includes laboratory history; older version 1 archives remain readable. It refuses to overwrite existing files. It never
 writes to the production database.
 
 This is application-data recovery, not a full PostgreSQL dump. PostgreSQL roles,
@@ -58,7 +59,7 @@ py -3.12 backup_data.py restore-sqlite --backup backups/current.health-backup.js
 To export an existing local SQLite database instead, use `--sqlite PATH`; that
 explicit choice overrides DATABASE_URL. Exports use a read-only repeatable-read
 transaction on PostgreSQL. The application connection needs permission to read
-all 13 tables. The backup does not include its connection string.
+all 16 tables. The backup does not include its connection string.
 
 For local review, point NUTRITION_DB at the restored SQLite file **and unset
 DATABASE_URL**, otherwise the app will still connect to the hosted database.

@@ -2,6 +2,10 @@ name: Validate private backup and restore utility
 on:
   pull_request:
     paths:
+      - 'labs.py'
+      - 'labs_ui.py'
+      - 'test_labs.py'
+      - 'lab_schema.sql'
       - 'backup_data.py'
       - 'backup_crypto.py'
       - 'backup_artifact.py'
@@ -26,7 +30,7 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements-backup.txt
       - run: python -m py_compile backup_data.py backup_crypto.py backup_artifact.py migrate_sqlite_to_postgres.py
-      - run: python -m unittest -v test_backup_data test_backup_artifact
+      - run: python -m unittest -v test_backup_data test_backup_artifact test_labs
       - name: Prepare synthetic encrypted artifact
         id: synthetic
         run: |

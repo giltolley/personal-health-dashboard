@@ -71,7 +71,7 @@ class StreamlitUITests(unittest.TestCase):
                 at.run()
                 self.assertFalse(at.exception, 'Streamlit failed to render: '+str(at.exception))
                 self.assertEqual([tab.label for tab in at.tabs],
-                    ['Overview','Energy & Nutrition','Training','Recovery & Health','Data & Sync'])
+                    ['Overview','Energy & Nutrition','Training','Recovery & Health','Data & Sync','Labs'])
                 self.assertFalse(any('Insights' in tab.label for tab in at.tabs))
                 expected=['1. Blood Pressure','2. Cardiovascular Health','3. Sleep Quality',
                           '4. Dietary Analysis','5. Intake vs. Training Heuristics']
