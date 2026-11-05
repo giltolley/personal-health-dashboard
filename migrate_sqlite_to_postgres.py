@@ -12,6 +12,7 @@ from importer import SCHEMA as NUTRITION_SCHEMA
 from garmin_importer import SCHEMA as GARMIN_SCHEMA
 from hevy_importer import SCHEMA as HEVY_SCHEMA
 from goals import SCHEMA as GOAL_SCHEMA
+from labs import SCHEMA as LAB_SCHEMA
 
 TABLE_KEYS = {
     'nutrition': ['record_id'], 'weights': ['record_id'],
@@ -23,6 +24,9 @@ TABLE_KEYS = {
     'hevy_sync_state': ['key'],
     'ingestion_log': ['run_id'],
     'goal_history': ['event_id'],
+    'lab_collections': ['collection_id'],
+    'lab_panels': ['panel_id'],
+    'lab_results': ['panel_id','test_key'],
 }
 
 
@@ -33,7 +37,7 @@ def migrate(source_file, destination, *, dry_run=False):
         if dry_run:
             return {table: source.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
                     for table in TABLE_KEYS if table in available}
-        for schema in (NUTRITION_SCHEMA, GARMIN_SCHEMA, HEVY_SCHEMA, GOAL_SCHEMA):
+        for schema in (NUTRITION_SCHEMA, GARMIN_SCHEMA, HEVY_SCHEMA, GOAL_SCHEMA, LAB_SCHEMA):
             destination.executescript(schema)
         if getattr(destination,'backend',None)=='postgresql':
             # Restoring private application data must not expose new public tables.

@@ -17,10 +17,13 @@ from importer import SCHEMA as NUTRITION_SCHEMA
 from garmin_importer import SCHEMA as GARMIN_SCHEMA
 from hevy_importer import SCHEMA as HEVY_SCHEMA
 from goals import SCHEMA as GOAL_SCHEMA
+from labs import SCHEMA as LAB_SCHEMA
 
-TABLES=('backfill','garmin_activities','garmin_daily','goal_history','hc_blood_pressure',
+LEGACY_TABLES=('backfill','garmin_activities','garmin_daily','goal_history','hc_blood_pressure',
         'hc_body_fat','hevy_exercises','hevy_sets','hevy_sync_state','hevy_workouts',
         'ingestion_log','nutrition','weights')
+LAB_TABLES=('lab_collections','lab_panels','lab_results')
+TABLES=LEGACY_TABLES+LAB_TABLES
 
 
 def canonical_table(table):
@@ -42,9 +45,10 @@ def seal(snapshot):
 
 
 def validate(snapshot):
-    if snapshot.get('format_version')!=1 or set(snapshot.get('tables',{}))!=set(TABLES):
+    expected={1:LEGACY_TABLES,2:TABLES}.get(snapshot.get('format_version'))
+    if expected is None or set(snapshot.get('tables',{}))!=set(expected):
         raise ValueError('Unsupported format or incomplete application table set.')
-    for name in TABLES:
+    for name in expected:
         table=snapshot['tables'][name]
         if snapshot.get('counts',{}).get(name)!=len(table['rows']):
             raise ValueError('Row-count mismatch: '+name)
@@ -56,12 +60,21 @@ def validate(snapshot):
 
 def snapshot_from_connection(db):
     tables={}
+    if getattr(db,'backend',None)=='postgresql':
+        available={row[0] for row in db.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'")}
+    else:
+        available={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    present=set(LAB_TABLES)&available
+    if present and present!=set(LAB_TABLES):
+        raise ValueError('Incomplete laboratory schema; refusing partial backup.')
+    names=TABLES if present else LEGACY_TABLES
     # Caller owns the transaction; use one repeatable-read transaction on PostgreSQL.
-    for name in TABLES:
+    for name in names:
         cursor=db.execute('SELECT * FROM '+name)
         columns=[c[0] if isinstance(c,tuple) else c.name for c in cursor.description]
         tables[name]={'columns':columns,'rows':[dict(zip(columns,r)) for r in cursor.fetchall()]}
-    return seal({'format_version':1,'created_at':datetime.now(timezone.utc).isoformat(),
+    return seal({'format_version':2 if present else 1,'created_at':datetime.now(timezone.utc).isoformat(),
                  'source_engine':getattr(db,'backend','sqlite'),'tables':tables})
 
 
@@ -92,9 +105,9 @@ def restore_sqlite(snapshot,destination):
     path.chmod(0o600)
     db=sqlite3.connect(path)
     try:
-        db.executescript(NUTRITION_SCHEMA+GARMIN_SCHEMA+HEVY_SCHEMA+GOAL_SCHEMA)
+        db.executescript(NUTRITION_SCHEMA+GARMIN_SCHEMA+HEVY_SCHEMA+GOAL_SCHEMA+LAB_SCHEMA)
         with db:
-            for name in TABLES:
+            for name in (TABLES if snapshot['format_version']==2 else LEGACY_TABLES):
                 table=snapshot['tables'][name]
                 columns=[r[1] for r in db.execute('PRAGMA table_info('+name+')')]
                 if table['columns']!=columns:
@@ -106,17 +119,22 @@ def restore_sqlite(snapshot,destination):
         if db.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
             raise ValueError('Restored database failed integrity check.')
         restored=snapshot_from_connection(db)
-        if restored['checksums']!=snapshot['checksums']:
+        if any(restored['checksums'][name]!=checksum for name,checksum in snapshot['checksums'].items()):
             raise ValueError('Restored data differs from source snapshot.')
         orphans=db.execute('''SELECT COUNT(*) FROM hevy_sets s LEFT JOIN hevy_exercises e
             ON s.workout_id=e.workout_id AND s.exercise_index=e.exercise_index
             WHERE e.workout_id IS NULL''').fetchone()[0]
         orphans+=db.execute('''SELECT COUNT(*) FROM hevy_exercises e LEFT JOIN hevy_workouts w
             ON e.workout_id=w.workout_id WHERE w.workout_id IS NULL''').fetchone()[0]
+        orphans+=db.execute('''SELECT COUNT(*) FROM lab_panels p LEFT JOIN lab_collections c
+            ON p.collection_id=c.collection_id WHERE c.collection_id IS NULL''').fetchone()[0]
+        orphans+=db.execute('''SELECT COUNT(*) FROM lab_results r LEFT JOIN lab_panels p
+            ON r.panel_id=p.panel_id WHERE p.panel_id IS NULL''').fetchone()[0]
         if orphans:
-            raise ValueError('Backup contains orphaned Hevy records.')
-        return {'tables':len(TABLES),'rows':sum(restored['counts'].values()),
-                'counts':restored['counts'],'integrity':'ok','checksums_match':True,'orphaned_records':0}
+            raise ValueError('Backup contains orphaned application records.')
+        counts={name:restored['counts'][name] for name in snapshot['tables']}
+        return {'tables':len(counts),'rows':sum(counts.values()),
+                'counts':counts,'integrity':'ok','checksums_match':True,'orphaned_records':0}
     except Exception:
         db.close()
         path.unlink(missing_ok=True)  # Only the newly created failed restore, never an existing file.
@@ -143,7 +161,7 @@ def main():
                     db.execute('BEGIN')
                 snapshot=snapshot_from_connection(db)
             write_backup(snapshot,args.output)
-            print('Backup saved:',len(TABLES),'tables;',sum(snapshot['counts'].values()),'records.')
+            print('Backup saved:',len(snapshot['tables']),'tables;',sum(snapshot['counts'].values()),'records.')
         finally:
             db.close()
     else:

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add a Labs tab with collection selection, panel tables, source text, and
+  comparisons with the supplied lab normal ranges. Preserve qualitative values,
+  intervals, inequalities and original units.
+- Store private lab collections, panels and results with RLS and no browser API
+  access; include all three tables in encrypted backups and recovery migration.
+- Keep version 1 backups readable while exporting format version 2 when lab
+  tables are present.
+
 ## 1.0.0 — 2026-11-04
 
 First stable personal-use release of the hosted health dashboard.

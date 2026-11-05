@@ -24,6 +24,8 @@ from goals import ensure_goals, read_goals, goal_at, window_context
 from goals_ui import goal_editor
 from data_health import load_sync_health,measurement_health,render_freshness
 from overview import render_overview
+from labs import ensure_labs
+from labs_ui import render_labs
 from health_extra import import_health_extras
 from garmin_importer import ensure_schema, import_garmin_zip, sync_garmin
 from hevy_importer import ensure_hevy_schema, sync_hevy
@@ -36,6 +38,7 @@ ensure_schema(db)
 ensure_hevy_schema(db)
 TODAY=pd.Timestamp.now(tz='America/New_York').date()
 ensure_goals(db)
+ensure_labs(db)
 goal_history=read_goals(db)
 current_goal=goal_at(goal_history,TODAY)
 calorie_goal=int(current_goal.calories) if pd.notna(current_goal.calories) else 2800
@@ -191,7 +194,7 @@ nd=f(daily);g=f(garmin);w=f(weight.to_frame());hrv=g if not g.empty else pd.Data
 
 
 # Navigation follows the user's decision priorities; deep dives are opt-in.
-pages=st.tabs(["Overview","Energy & Nutrition","Training","Recovery & Health","Data & Sync"])
+pages=st.tabs(["Overview","Energy & Nutrition","Training","Recovery & Health","Data & Sync","Labs"])
 COMPLETED_END=min(end,TODAY-timedelta(days=1))
 DISPLAY_START=max(start,COMPLETED_END-timedelta(days=44))
 def period_frame(data,begin_date,finish_date):
@@ -541,3 +544,6 @@ with pages[4]:
                     f"MAX(CASE WHEN {col} IS NOT NULL THEN local_date END) FROM garmin_daily").fetchone()
             rows.append({"Metric":label,"Days":n,"First":first,"Last":last})
         st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+
+with pages[5]:
+    render_labs(db)

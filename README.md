@@ -44,7 +44,7 @@ Nutrition summaries preserve unknown daily totals if any meal has a NULL value
 for that nutrient. The 3+ meal-record completeness proxy cannot verify food-entry
 accuracy or distinguish an omitted nutrient stored as numeric zero. Training
 suggestions compare two 28-day windows and are coaching heuristics, not automatic
-calorie adjustments. Waist tracking is optional; lab imports are deferred.
+calorie adjustments. Waist tracking is optional. Laboratory collections are available in the Labs tab.
 
 Run `python -m unittest -v test_overview test_streamlit_v07_smoke` to check
 thresholds, sparse records, nutrition aggregation, and all five rendered sections.
@@ -102,3 +102,22 @@ Use Python 3.12, install `requirements-backup.txt`, then run `python -m unittest
 Tests use synthetic fixtures; keep production credentials out of the test environment.
 The app displays the release version from `version.py`; historical module/test
 filenames are retained for compatibility.
+
+## Laboratory history
+
+The Labs tab groups results by collection and panel, independently of the daily
+start/end date filters. It preserves text, intervals, inequalities, units and
+lab-specific normal ranges. Range status is calculated from those supplied
+ranges; missing ranges and unassessed text are never labeled normal. An optional
+filter shows results definitively outside the lab range. Source transcriptions,
+blank fields and administrative notes remain available for review.
+
+Provision hosted lab tables with `lab_schema.sql` before deploying this version.
+It enables RLS and revokes access from browser API roles, matching the existing
+server-only access model. Local SQLite tables initialize automatically. Personal
+results belong only in the private database, never in this public repository.
+There is no automatic email parser or clinical diagnosis feature.
+
+Backups include collections, panels and results in format version 2; version 1
+backups remain readable. Run `python -m unittest -v test_labs test_backup_data
+test_backup_artifact test_streamlit_v07_smoke` for synthetic validation.
