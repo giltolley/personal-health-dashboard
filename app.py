@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from version import __version__
 from importer import initialize, import_health_zip, import_backfill_csv, read_daily, read_weight
 from datastore import read_frame
 from insights_v06 import energy_window, estimate_tdee
@@ -71,7 +72,7 @@ def last_value(df,col):
     return x.iloc[-1] if not x.empty else float('nan')
 
 st.title('Personal Health Analytics')
-st.caption('Personal dashboard · Source-aware metrics · Missing records are not zero')
+st.caption(f'Personal dashboard · v{__version__} · Source-aware metrics · Missing records are not zero')
 
 with st.sidebar:
     st.header('Calorie goal')
@@ -85,7 +86,7 @@ with st.sidebar:
     st.divider()
     st.header('Data integrations')
     if HOSTED:
-        st.info('Cloud mode: Garmin and Hevy sync through scheduled jobs. Upload raw Health Connect backups only in your local installation; migrate the selected records to PostgreSQL.')
+        st.info('Cloud mode: Garmin, Hevy and Health Connect sync through scheduled jobs. Health Connect exports are retrieved from the configured Drive folder. Review source freshness and GitHub Actions for sync status.')
         st.caption('Database: PostgreSQL (hosted)')
     else:
         with st.expander('Health Connect import',expanded=False):

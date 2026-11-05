@@ -1,8 +1,10 @@
-# Personal Health Dashboard · pre-1.0
+# Personal Health Dashboard · 1.0.0
 
-Supports **local SQLite** (compatible with your existing v0.3.2 database) and **standard PostgreSQL** by setting `DATABASE_URL`. Keeps Garmin and Hevy sync clients separate from the Streamlit UI. Includes optional GitHub Actions schedules for free cloud deployment.
+A personal health dashboard with a decision-focused Overview, nutrition and energy analysis, training and recovery views, saved goal history, and a 5/3/1 next-cycle planner. Supports local SQLite and hosted PostgreSQL through `DATABASE_URL`. Ingestion runs separately from the Streamlit UI.
 
-**Start here:** [DEPLOYMENT.md](DEPLOYMENT.md). First test locally and back up your SQLite file. No cloud credentials or database are included in this archive.
+**Start here:** [DEPLOYMENT.md](DEPLOYMENT.md) for the current architecture and configuration, [CHANGELOG.md](CHANGELOG.md) for release notes, and [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for recovery.
+
+For the 1.0 deployment, invitation-only Streamlit access has been confirmed and the first live encrypted backup passed verification. Daily backups are configured with 30-day retention. Keep monitoring scheduled runs; a full PostgreSQL restore drill is deferred.
 
 Local quick start (Python 3.12+):
 
@@ -24,7 +26,7 @@ py -3.12 sync_all.py --garmin --days 14
 py -3.12 sync_all.py --hevy
 ```
 
-With `DATABASE_URL` set, scheduled jobs write to PostgreSQL. The hosted Streamlit UI intentionally hides raw Health Connect imports and live API sync buttons: exports are processed locally and keys belong in the scheduled-job environment, not the frontend.
+With `DATABASE_URL` set, scheduled jobs write to PostgreSQL. The hosted Streamlit UI intentionally hides raw Health Connect imports and live API sync buttons: Health Connect exports are retrieved from Drive by a scheduled job, and integration credentials belong in the scheduled-job environment.
 
 Security: this repository contains code only and may be public. Deployed app visibility is a separate setting that must be verified in Streamlit. Keep credentials and health exports out of Git. A local data-recovery test is documented in BACKUP_RECOVERY.md; it is not a full PostgreSQL disaster-recovery certification.
 
@@ -83,13 +85,20 @@ BP and body-fat dates are event-driven and do not trigger stale-sync warnings.
 Health Connect now records an unchanged-export check without reimporting the ZIP.
 Older entries record completed imports only. Hevy records last successful sync;
 failed attempts must still be inspected in GitHub Actions. The UI reads database
-markers, not a live GitHub API feed. No measurement or credential is sent to GitHub.
+markers, not a live GitHub API feed. Plaintext measurements and credentials are not committed to the repository. Scheduled runners process private data, and the backup workflow uploads only encrypted payloads as artifacts.
 
 
-See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for private application-data export, isolated restore verification, access checks and remaining operational requirements.
+See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for private application-data export, isolated restore verification, access checks and ongoing operational requirements.
 
 
-Daily encrypted GitHub artifact backups are prepared in `.github/workflows/backup-artifact.yml`.
+Daily encrypted GitHub artifact backups are implemented in `.github/workflows/backup-artifact.yml`.
 Add the nonsecret BACKUP_PUBLIC_KEY repository variable to enable the schedule;
 keep its matching private key outside GitHub. See BACKUP_RECOVERY.md for activation,
 30-day retention, verification and recovery instructions.
+
+## Development checks
+
+Use Python 3.12, install `requirements-backup.txt`, then run `python -m unittest discover -v`.
+Tests use synthetic fixtures; keep production credentials out of the test environment.
+The app displays the release version from `version.py`; historical module/test
+filenames are retained for compatibility.

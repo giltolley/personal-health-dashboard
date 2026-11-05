@@ -1,5 +1,17 @@
 # Access and application-data recovery
 
+## 1.0 operational status
+
+The owner confirmed invitation-only Streamlit viewing. The first live backup
+completed successfully, including isolated restore validation, encryption,
+artifact upload, download and checksum verification. The daily schedule is
+configured. Monitor scheduled runs and keep the private decryption key protected.
+The full PostgreSQL restore drill remains deferred by the owner.
+
+The setup instructions below also apply to a new deployment; do not regenerate
+keys for an existing installation unless deliberately rotating them. Keep older
+private keys for any retained artifacts encrypted with their public keys.
+
 ## Access boundaries
 
 Repository visibility and Streamlit app visibility are separate. A public code
@@ -120,7 +132,8 @@ py -3.12 backup_data.py restore-sqlite --backup backups/recovered.health-backup.
 
 Commands refuse to overwrite existing files. Use the replacement-database
 migration steps above after successful local verification. The owner handles the
-Streamlit access review. Activation and the first live run remain owner steps.
+Streamlit access review, which is complete for 1.0. New deployments must repeat
+the access review, activation and first live backup verification.
 
 References:
 - https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts
