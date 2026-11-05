@@ -1,0 +1,52 @@
+name: Daily encrypted database backup
+on:
+  schedule:
+    - cron: '47 5 * * *'
+      timezone: 'America/New_York'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: private-health-dashboard-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    # A non-secret public key is the only new setting needed to enable backups.
+    if: vars.BACKUP_PUBLIC_KEY != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-backup.txt
+      - run: python -m pip install -r requirements-backup.txt
+      - name: Export, restore-check and encrypt
+        id: prepare
+        run: python backup_artifact.py --output-dir "$RUNNER_TEMP/encrypted-backup"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PUBLIC_KEY: ${{ vars.BACKUP_PUBLIC_KEY }}
+      - name: Store encrypted backup for 30 days
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: encrypted-health-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/encrypted-backup/dashboard.health-backup.enc
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Download the stored artifact for verification
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.upload.outputs.artifact-id }}
+          path: ${{ runner.temp }}/downloaded-backup
+          digest-mismatch: error
+      - name: Verify encrypted bytes after download
+        run: python backup_artifact.py --verify-file "$RUNNER_TEMP/downloaded-backup/dashboard.health-backup.enc"
+        env:
+          EXPECTED_BACKUP_SHA256: ${{ steps.prepare.outputs.sha256 }}

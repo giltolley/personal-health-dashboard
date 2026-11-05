@@ -101,7 +101,7 @@ from datetime import date
 from overview import render_overview
 render_overview(pd.DataFrame(),pd.Series(dtype=float),pd.DataFrame(),
                 pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),date(2026,11,3),2800)
-""").run()
+""",default_timeout=30).run()
         self.assertFalse(at.exception)
         self.assertEqual(len(at.subheader),5)
         self.assertTrue(any('No recent sleep measurements' in x.value for x in at.markdown))

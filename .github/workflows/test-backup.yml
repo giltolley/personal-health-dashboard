@@ -1,0 +1,55 @@
+name: Validate private backup and restore utility
+on:
+  pull_request:
+    paths:
+      - 'backup_data.py'
+      - 'backup_crypto.py'
+      - 'backup_artifact.py'
+      - 'requirements-backup.txt'
+      - 'test_backup_artifact.py'
+      - '.github/workflows/backup-artifact.yml'
+      - 'test_backup_data.py'
+      - 'migrate_sqlite_to_postgres.py'
+      - '.github/workflows/test-backup.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements-backup.txt
+      - run: python -m py_compile backup_data.py backup_crypto.py backup_artifact.py migrate_sqlite_to_postgres.py
+      - run: python -m unittest -v test_backup_data test_backup_artifact
+      - name: Prepare synthetic encrypted artifact
+        id: synthetic
+        run: |
+          python - <<'PYTHON'
+          import os
+          from test_backup_artifact import write_synthetic_artifact
+          checksum=write_synthetic_artifact(os.environ['RUNNER_TEMP']+'/synthetic-backup')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('sha256='+checksum+'\n')
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: synthetic-encrypted-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/synthetic-backup/dashboard.health-backup.enc
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.upload.outputs.artifact-id }}
+          path: ${{ runner.temp }}/downloaded-backup
+          digest-mismatch: error
+      - name: Verify downloaded synthetic ciphertext
+        run: python backup_artifact.py --verify-file "$RUNNER_TEMP/downloaded-backup/dashboard.health-backup.enc"
+        env:
+          EXPECTED_BACKUP_SHA256: ${{ steps.synthetic.outputs.sha256 }}

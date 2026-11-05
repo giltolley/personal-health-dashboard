@@ -1,4 +1,4 @@
-# Personal Health Dashboard v0.4 (cloud-portable)
+# Personal Health Dashboard · pre-1.0
 
 Supports **local SQLite** (compatible with your existing v0.3.2 database) and **standard PostgreSQL** by setting `DATABASE_URL`. Keeps Garmin and Hevy sync clients separate from the Streamlit UI. Includes optional GitHub Actions schedules for free cloud deployment.
 
@@ -26,7 +26,7 @@ py -3.12 sync_all.py --hevy
 
 With `DATABASE_URL` set, scheduled jobs write to PostgreSQL. The hosted Streamlit UI intentionally hides raw Health Connect imports and live API sync buttons: exports are processed locally and keys belong in the scheduled-job environment, not the frontend.
 
-Security: private repository, private app, environment secrets, regular backup, and no health exports in Git. The PostgreSQL path still requires an end-to-end test with a real database before considered production-ready.
+Security: this repository contains code only and may be public. Deployed app visibility is a separate setting that must be verified in Streamlit. Keep credentials and health exports out of Git. A local data-recovery test is documented in BACKUP_RECOVERY.md; it is not a full PostgreSQL disaster-recovery certification.
 
 
 ## Actionable Overview
@@ -84,3 +84,12 @@ Health Connect now records an unchanged-export check without reimporting the ZIP
 Older entries record completed imports only. Hevy records last successful sync;
 failed attempts must still be inspected in GitHub Actions. The UI reads database
 markers, not a live GitHub API feed. No measurement or credential is sent to GitHub.
+
+
+See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for private application-data export, isolated restore verification, access checks and remaining operational requirements.
+
+
+Daily encrypted GitHub artifact backups are prepared in `.github/workflows/backup-artifact.yml`.
+Add the nonsecret BACKUP_PUBLIC_KEY repository variable to enable the schedule;
+keep its matching private key outside GitHub. See BACKUP_RECOVERY.md for activation,
+30-day retention, verification and recovery instructions.

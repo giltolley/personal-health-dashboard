@@ -27,3 +27,11 @@ backups/
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Portable private application backups
+*.health-backup.json.gz
+
+# Encrypted backup payloads and OAuth setup files
+*.health-backup.enc
+drive-backup-auth.json
+oauth-client*.json
