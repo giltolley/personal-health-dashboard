@@ -4,6 +4,7 @@ on:
     paths:
       - 'labs.py'
       - 'labs_ui.py'
+      - 'lab_comparison.py'
       - 'test_labs.py'
       - 'lab_schema.sql'
       - 'app.py'

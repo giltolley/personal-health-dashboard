@@ -118,6 +118,20 @@ server-only access model. Local SQLite tables initialize automatically. Personal
 results belong only in the private database, never in this public repository.
 There is no automatic email parser or clinical diagnosis feature.
 
+With two or more collections, Labs opens a side-by-side comparison. Choose a
+baseline and comparison collection; changes are comparison minus baseline.
+Tests match by explicit panel family and test key, so urine and blood tests
+with the same name remain separate. Both sides retain their own ranges and
+units. Missing tests remain visible. Different units, text, intervals and
+inequalities do not receive a numeric change; matching units do not guarantee
+identical laboratory methods. Duplicate test identities are not paired automatically.
+
+Result and status cells are green within the supplied lab range, red above or
+below it, amber for an uncertain boundary, and gray when unassessed or missing.
+Text labels remain visible in both comparison and collection detail views.
+Changes themselves are not colored as improvements or deterioration.
+
+
 Backups include collections, panels and results in format version 2; version 1
 backups remain readable. Run `python -m unittest -v test_labs test_backup_data
 test_backup_artifact test_streamlit_v07_smoke` for synthetic validation.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add side-by-side lab collection comparison with panel-aware test matching,
+  original ranges on both sides, exact numeric differences for matching units,
+  and visible unmatched tests.
+- Color result/status cells in both Labs views while keeping text labels:
+  green within range, red outside, amber uncertain, and gray unassessed/missing.
+
 - Add a Labs tab with collection selection, panel tables, source text, and
   comparisons with the supplied lab normal ranges. Preserve qualitative values,
   intervals, inequalities and original units.
