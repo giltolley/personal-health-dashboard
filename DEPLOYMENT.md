@@ -1,96 +1,93 @@
-> Historical deployment notes below predate the current hosted app. The repository
-> is public; app visibility is independent. For current access and recovery
-> requirements, use [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md). Do not treat the older
-> private-repository or local-only Health Connect descriptions as current state.
+# Personal Health Dashboard deployment
 
-# Personal Health Dashboard v0.4 — Portable cloud preparation
+## Current architecture (1.0.0)
 
-This release is a portability upgrade, **not yet a confirmed live cloud deployment**.
-Current UI is the same v0.3.2 dashboard; the Hevy full-reconciliation fallback is included.
+| Component | Responsibility |
+|---|---|
+| Streamlit Community Cloud | Invitation-only dashboard and protected goal editor |
+| PostgreSQL | Persistent application measurements, goals and sync markers |
+| GitHub repository | Public source code; no plaintext health exports or credentials |
+| GitHub Actions | Source ingestion and encrypted application-data backups |
+| Google Drive | Health Connect ZIP source, read through a folder-scoped service account |
+| Local SQLite | Local operation, imports and isolated recovery verification |
 
-## Architecture and service responsibilities
+Repository visibility is independent of Streamlit viewer access. The owner
+confirmed invitation-only Streamlit access for the 1.0 release. Recheck viewer
+settings after deployment or sharing changes. Goal-editor protection only gates
+edits; it does not control dashboard viewing.
 
-- **Streamlit Community Cloud:** browser UI only, **private app** from a **private GitHub repository**. Give it only the database connection secret.
-- **Supabase Free PostgreSQL:** persistent analytical measurements. No raw Health Connect ZIP files or auth tokens are stored in the database. The free tier includes 500 MB but may pause for inactivity and has no automatic backups.
-- **GitHub Actions:** Garmin job every six hours, Hevy job once a day. Both jobs write to the same database. They run without Streamlit or your PC.
-- **Your computer/Android:** Health Connect export stays local for now. Use the existing local dashboard import, then migrate its selected records. Automated daily HC retrieval is a *future* integration and is not configured in this release.
+## Local start
 
-## First, test locally without a cloud account
-
-1. Back up your existing dashboard folder, especially `nutrition_analytics.sqlite`.
-2. Stop Streamlit; replace your **code files** with this release, but **do not overwrite your existing SQLite database**.
-3. Install requirements: `py -3.12 -m pip install -r requirements.txt`.
-4. Start locally: `py -3.12 -m streamlit run app.py`.
-5. Confirm Nutrition, Garmin/recovery, Renpho and Training views still work.
-6. Audit your own SQLite file: `py -3.12 size_audit.py --sqlite nutrition_analytics.sqlite`.
-
-`DATABASE_URL` is optional. When unset, the app uses the same local SQLite file and local key files as before.
-
-## Set up the free cloud deployment (when ready)
-
-### A. Create PostgreSQL database
-
-1. Create a Supabase Free project.
-2. In **Connect**, copy the **Session pooler** PostgreSQL connection URL (usually port 5432); use the actual supplied host and username, not a guessed one. The direct endpoint may be IPv6-only.
-3. Use a strong database password. URL-percent-encode special password characters.
-4. Prefer verified TLS (`sslmode=verify-full` plus Supabase's root certificate) where possible; at minimum set `sslmode=require`. This encrypts the connection but does not fully verify server identity.
-5. In a local PowerShell session, set `$env:DATABASE_URL` to the connection string. **Do not paste it into code or your Git repository.**
-
-### B. Migrate your existing data
-
-Run from the dashboard folder:
+Use Python 3.12 and install `requirements.txt`:
 
 ```powershell
-py -3.12 migrate_sqlite_to_postgres.py --sqlite nutrition_analytics.sqlite --dry-run
-py -3.12 migrate_sqlite_to_postgres.py --sqlite nutrition_analytics.sqlite
+py -3.12 -m pip install -r requirements.txt
+py -3.12 -m streamlit run app.py
 ```
 
-The source SQLite file is opened read-only; the destination tables are created in PostgreSQL and records are upserted by primary key. A repeated migration should not duplicate rows. If migration fails, keep the SQLite backup and review the error before retrying.
+Without DATABASE_URL, the app uses SQLite; NUTRITION_DB selects its path.
+With DATABASE_URL configured, the app uses PostgreSQL. Unset DATABASE_URL when
+reviewing a restored SQLite file so you do not connect to the hosted database.
 
-**No live Supabase instance was available during development, so this is a staging implementation. Validate the PostgreSQL connection and migrated counts before enabling scheduled jobs.**
+## Hosted configuration
 
-### C. Create a private GitHub repository
+Keep the PostgreSQL connection URL private. Use the actual provider-supplied
+connection host, username and port; URL-encode password characters. Configure
+TLS for the connection, with certificate verification where available.
 
-1. Create a **private** repository for the dashboard and push the code only.
-2. Verify the `.gitignore` excluded any `.sqlite`, `.db`, ZIP, JSON, `.env`, tokens and `secrets.toml`. Check your staged file list **before** the first push.
-3. In **Settings → Secrets and variables → Actions**, create exactly these repository secrets:
-   - `DATABASE_URL`: Supabase PostgreSQL session-pooler connection URL
-   - `GARMIN_PERSONAL_API_KEY`: Garmin personal key
-   - `HEVY_API_KEY`: Hevy Pro key
-4. Under **Actions**, test each workflow using **Run workflow** before relying on the schedules. Workflows only retrieve measurements and store them; they do not modify Garmin or Hevy.
-5. Automatic schedules may be delayed, especially on busy GitHub infrastructure. Monitor runs and data freshness.
+In Streamlit secrets, configure root-level DATABASE_URL. Optionally configure
+GOAL_EDIT_TOKEN to enable protected hosted goal editing; without it, the editor
+is read-only. Do not supply Garmin or Hevy API keys to Streamlit.
 
-### D. Deploy private Streamlit dashboard
+The app initializes application schemas at startup. Provision the protected
+`goal_history_schema.sql` before deploying saved-goal functionality. Browser API
+roles must not have access to application tables. See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md)
+for access boundaries and replacement-database migration instructions.
 
-1. Visit Streamlit Community Cloud, link your **private GitHub repo**, and select `app.py`.
-2. Choose **private app**, not public. Community Cloud permits one private app at a time on its free offering.
-3. In the deployment's **Advanced settings → Secrets**, enter the root-level TOML setting:
+### GitHub Actions configuration
 
-```toml
-DATABASE_URL = "postgresql://REPLACE_WITH_YOUR_CONNECTION_URL"
-```
+| Setting | Type | Used by |
+|---|---|---|
+| DATABASE_URL | Secret | Sync jobs and backups |
+| GARMIN_PERSONAL_API_KEY | Secret | Garmin sync |
+| HEVY_API_KEY | Secret | Hevy sync |
+| GCP_WORKLOAD_IDENTITY_PROVIDER | Variable | Health Connect Google authentication |
+| GCP_SERVICE_ACCOUNT_EMAIL | Variable | Health Connect folder reader |
+| GOOGLE_DRIVE_FOLDER_ID | Variable | Health Connect source folder |
+| BACKUP_PUBLIC_KEY | Variable | Enables and encrypts recurring backups |
 
-4. Do **not** put your Garmin or Hevy keys in Streamlit. The dashboard reads PostgreSQL; Actions performs API syncing separately.
-5. Check that the imported history appears and the app is private. Do not share its URL or grant viewers unless intended.
+Health Connect uses Google Workload Identity Federation through the workflow's
+OIDC identity. Grant the service account read access to the intended source
+folder and restrict the identity trust to the intended repository/workflow.
+It does not need ownership of a backup folder. Backup encryption is independent
+of Google authorization: keep the matching private key outside GitHub.
 
-## Why the architecture is portable
+### Schedules
 
-Nothing imports Supabase SDKs, GitHub APIs, or Streamlit-specific services into the ingestion modules.
-`DATABASE_URL` accepts any standard PostgreSQL DSN, including Render or Railway. The separate cron entrypoint `sync_all.py` can run on any scheduler, and `app.py` can run on any Streamlit-compatible Python server. SQLite remains the local fallback.
+| Workflow | Configured schedule |
+|---|---|
+| Garmin | 02:17, 08:17, 14:17 and 20:17 UTC |
+| Hevy | 10:31 and 22:31 UTC |
+| Health Connect | 03:43 America/New_York |
+| Encrypted backup | 05:47 America/New_York |
 
-## Backups and privacy
+Workflows also support manual dispatch. Health Connect manual dispatch defaults
+to preview; select normal to import changes or force to reprocess an export.
+Schedules may be delayed. Inspect Actions failures and the dashboard's source
+freshness indicators; those indicators read database markers, not GitHub status.
 
-- **Free Supabase does not provide automatic database backups.** Configure an independent encrypted backup before relying on the cloud as your sole copy.
-- Keep the existing `nutrition_analytics.sqlite` and Health Connect exports securely on your computer during migration.
-- The private Streamlit service and GitHub Actions will both reach the same PostgreSQL database. Use distinct read-only and write database credentials in a future security-hardening release if possible.
-- API keys expire/revoke independently; track future expiry in your own password manager.
-- Do not commit plaintext health exports, workout JSON, database credentials or bearer-token cache files.
-- The free cloud deployment is suitable for personal experimentation, **not a high-availability or regulatory-grade medical system**.
+## Release and operations
 
-## Scope still outstanding
+The first live encrypted backup passed export, isolated restore, encryption,
+upload, download and ciphertext verification for 1.0. Each backup is retained
+for 30 days. See [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md) for decryption, retention
+limits and recovery. The first scheduled execution still needs routine monitoring.
 
-- Automated Health Connect export retrieval from your chosen cloud destination
-- Nutrition CSV backfill converter and October 2026 gap repair
-- End-to-end Supabase/PostgreSQL integration testing
-- Automated encrypted off-site database backup
-- More granular database roles and long-term data-quality alerting
+After merging UI/module updates, rerun or reboot Streamlit if the app continues
+to show the previous code. Review source freshness and dated goal settings after
+a deployment. Enable GitHub Actions failure notifications and check run history
+periodically, including after extended repository inactivity.
+
+Remaining work is documented in [CHANGELOG.md](CHANGELOG.md). A separate
+least-privilege UI database role and a full PostgreSQL restore drill are deferred;
+the accepted 1.0 recovery check is isolated application-data restoration.
