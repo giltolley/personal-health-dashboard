@@ -2,7 +2,7 @@ name: Health Connect Drive scheduled sync
 
 on:
   schedule:
-    - cron: '43 3 * * *'
+    - cron: '0 5 * * *'
       timezone: 'America/New_York'
   workflow_dispatch:
     inputs:
