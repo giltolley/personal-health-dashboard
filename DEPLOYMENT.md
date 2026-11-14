@@ -75,7 +75,7 @@ of Google authorization: keep the matching private key outside GitHub.
 |---|---|
 | Garmin | 02:17, 08:17, 14:17 and 20:17 UTC |
 | Hevy | 10:31 and 22:31 UTC |
-| Health Connect | 05:00 America/New_York |
+| Health Connect | 00:30 America/New_York |
 | Encrypted backup | 05:47 America/New_York |
 
 Workflows also support manual dispatch. Health Connect manual dispatch defaults
