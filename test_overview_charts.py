@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from overview_charts import (bp_figure,activity_figure,nutrient_figure,
+from overview_charts import (activity_figure,nutrient_figure,
                              lift_change_figure,training_weight_figure,TEAL,AMBER)
 
 
@@ -10,17 +10,6 @@ class OverviewChartTests(unittest.TestCase):
     def setUp(self):
         self.end=pd.Timestamp('2026-11-03')
         self.dates=pd.date_range(end=self.end,periods=7)
-
-    def test_bp_separate_components_and_gaps(self):
-        frame=pd.DataFrame({'systolic':[125,135],'diastolic':[75,85]},
-                           index=[self.dates[0],self.dates[-1]])
-        fig=bp_figure(frame,self.end)
-        self.assertEqual(len(fig.data),2)
-        self.assertEqual(fig.data[0].yaxis,'y')
-        self.assertEqual(fig.data[1].yaxis,'y2')
-        self.assertEqual(sum(pd.notna(fig.data[0].y)),2)
-        self.assertEqual(sorted(s.y0 for s in fig.layout.shapes),[80,130])
-        self.assertFalse(fig.data[0].connectgaps)
 
     def test_activity_targets_and_axes_are_not_clipped_at_goal(self):
         fig=activity_figure({'minutes':225,'coverage':7,'strength_days':3})

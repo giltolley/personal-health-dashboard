@@ -17,23 +17,6 @@ def layout(fig, title, height=280):
     return fig
 
 
-def bp_figure(bp,end):
-    frame=window(bp,end,28)
-    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=.16,
-                      subplot_titles=['Systolic','Diastolic'])
-    dates=pd.date_range(end=pd.Timestamp(end),periods=28)
-    for row,(field,reference) in enumerate([('systolic',130),('diastolic',80)],1):
-        values=measured(frame,field)
-        values=values[values.gt(0)].groupby(level=0).mean().reindex(dates)
-        fig.add_trace(go.Scatter(x=dates,y=values,mode='lines+markers',connectgaps=False,
-            name=field.title(),line_color=BLUE,
-            hovertemplate='%{x|%b %d}: %{y:.0f} mmHg<extra></extra>'),row=row,col=1)
-        fig.add_hline(y=reference,line_dash='dot',line_color=AMBER,
-            annotation_text=f'{reference} mmHg · stage 1 boundary',row=row,col=1)
-        fig.update_yaxes(title_text='mmHg',row=row,col=1)
-    return layout(fig,'Blood pressure · daily averages · 28 days',350)
-
-
 def activity_figure(report):
     fig=make_subplots(rows=2,cols=1,vertical_spacing=.42,
                       subplot_titles=['Aerobic activity · moderate-equivalent minutes',

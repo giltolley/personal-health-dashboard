@@ -36,14 +36,37 @@ def metric_summary(frame, field, end, days=7, positive=False):
             'latest': values.index.max().date() if len(values) else None}
 
 
-def bp_summary(bp, end):
-    frame = window(bp, end, 7)
+def bp_daily_values(bp, end, days=28):
+    """Paired, finite positive measurements, with equal weight per measured day."""
+    frame = window(bp, end, days)
     if not {'systolic', 'diastolic'}.issubset(frame):
-        valid = pd.DataFrame()
-    else:
-        valid = frame[['systolic','diastolic']].apply(pd.to_numeric, errors='coerce')
-        valid = valid.replace([np.inf,-np.inf], np.nan).dropna()
-        valid = valid[valid.systolic.gt(0) & valid.diastolic.gt(0)].groupby(level=0).mean()
+        return pd.DataFrame(columns=['systolic', 'diastolic'])
+    valid = frame[['systolic','diastolic']].apply(pd.to_numeric, errors='coerce')
+    valid = valid.replace([np.inf,-np.inf], np.nan).dropna()
+    return valid[valid.systolic.gt(0) & valid.diastolic.gt(0)].groupby(level=0).mean().sort_index()
+
+
+def bp_weekly_table(bp, end):
+    """Four Monday–Sunday weeks, clipping the latest week to the selected date."""
+    end = pd.Timestamp(end).normalize()
+    monday = end-pd.Timedelta(days=end.weekday())
+    start = monday-pd.Timedelta(weeks=3)
+    valid = bp_daily_values(bp, end, (end-start).days+1)
+    rows = []
+    for first in pd.date_range(start, monday, freq='7D'):
+        last = min(first+pd.Timedelta(days=6), end)
+        week = valid.loc[first:last]
+        label = f'{first:%b %d}–{last:%b %d}'
+        if last < first+pd.Timedelta(days=6):
+            label += ' (partial)'
+        rows.append({'Week':label, 'Systolic':week.systolic.mean(),
+                     'Diastolic':week.diastolic.mean(),
+                     'Days measured':f'{len(week)}/{(last-first).days+1}'})
+    return pd.DataFrame(rows)
+
+
+def bp_summary(bp, end):
+    valid = bp_daily_values(bp, end, 7)
     result = {'days':len(valid), 'systolic':np.nan, 'diastolic':np.nan,
               'category':'Insufficient recent readings', 'action':
               'Collect standardized readings on several days; use a validated upper-arm cuff.'}
