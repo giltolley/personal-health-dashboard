@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from overview_metrics import (bp_summary, sleep_summary, cardio_summary,
+from overview_metrics import (bp_summary, bp_weekly_table, sleep_summary, cardio_summary,
                               nutrition_summary, training_summary)
 
 
@@ -20,6 +20,23 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual(bp_summary(bp,self.end+pd.Timedelta(days=14))['days'],0)
         bp.iloc[-1]=[185,85]
         self.assertIn('Recheck',bp_summary(bp,self.end)['action'])
+
+    def test_bp_weekly_coverage_partial_weeks_and_equal_day_weights(self):
+        bp=pd.DataFrame({'systolic':[100,140,130,999,120,np.inf],
+                         'diastolic':[60,80,90,999,np.nan,80]},
+            index=pd.to_datetime(['2026-11-02','2026-11-02','2026-11-03',
+                                  '2026-11-04','2026-10-27','2026-10-28']))
+        table=bp_weekly_table(bp,self.end)
+        self.assertEqual(len(table),4)
+        self.assertTrue(table.Systolic.iloc[:3].isna().all())
+        self.assertEqual(table.iloc[-1]['Week'],'Nov 02–Nov 03 (partial)')
+        self.assertEqual(table.iloc[-1]['Days measured'],'2/2')
+        self.assertEqual(table.iloc[-1].Systolic,125)
+        self.assertEqual(table.iloc[-1].Diastolic,80)
+        self.assertTrue(bp_weekly_table(pd.DataFrame(),self.end).Systolic.isna().all())
+        sunday=bp_weekly_table(bp,pd.Timestamp('2026-11-08'))
+        self.assertNotIn('partial',sunday.iloc[-1]['Week'])
+        self.assertEqual(sunday.iloc[-1]['Days measured'],'3/7')
 
     def test_sleep_boundaries_and_missing_are_distinct(self):
         g=pd.DataFrame({'sleep_hours':[5.99,6,6.99,7,np.nan,0,8]},index=self.idx)
@@ -105,6 +122,24 @@ render_overview(pd.DataFrame(),pd.Series(dtype=float),pd.DataFrame(),
         self.assertFalse(at.exception)
         self.assertEqual(len(at.subheader),5)
         self.assertTrue(any('No recent sleep measurements' in x.value for x in at.markdown))
+
+    def test_bp_weekly_view_renders_numbers_and_missing_weeks(self):
+        from streamlit.testing.v1 import AppTest
+        at=AppTest.from_string("""
+import pandas as pd
+from datetime import date
+from overview import render_overview
+bp=pd.DataFrame({'systolic':[120,130],'diastolic':[70,80]},
+                index=pd.to_datetime(['2026-11-02','2026-11-03']))
+render_overview(pd.DataFrame(),pd.Series(dtype=float),pd.DataFrame(),
+                bp,pd.DataFrame(),pd.DataFrame(),date(2026,11,3),2800)
+""",default_timeout=30).run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.metric[0].value,'125/75 mmHg')
+        weekly=next(x.value for x in at.dataframe if 'Week' in x.value.columns)
+        self.assertEqual(weekly.iloc[-1]['Days measured'],'2/2')
+        self.assertEqual(weekly.iloc[-1].Systolic,125)
+        self.assertTrue(weekly.Systolic.iloc[:3].isna().all())
 
 
 if __name__=='__main__':

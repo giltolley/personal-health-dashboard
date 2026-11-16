@@ -4,9 +4,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from dashboard_v08 import fmt
-from overview_charts import (bp_figure, activity_figure, nutrient_figure,
+from overview_charts import (activity_figure, nutrient_figure,
                              lift_change_figure, training_weight_figure)
-from overview_metrics import (window, bp_summary, cardio_summary, sleep_summary,
+from overview_metrics import (window, bp_summary, bp_weekly_table, bp_daily_values, cardio_summary, sleep_summary,
                               nutrition_summary, training_summary)
 
 
@@ -31,22 +31,40 @@ def render_overview(daily, weight, garmin, bp, workouts, sets, end, calorie_goal
         st.subheader('1. Blood Pressure')
         st.caption('Question: Is my measured blood pressure consistently elevated?')
         report=bp_summary(bp,end)
-        a,b,c=st.columns(3)
-        a.metric('Systolic · daily-average mean',fmt(report['systolic'])+' mmHg')
-        b.metric('Diastolic · daily-average mean',fmt(report['diastolic'])+' mmHg')
-        c.metric('Days with paired readings',f'{report["days"]}/7')
+        a,b=st.columns(2)
+        a.metric('Last 7 days · average BP',
+                 fmt(report['systolic'])+'/'+fmt(report['diastolic'])+' mmHg')
+        b.metric('Days with paired readings',f'{report["days"]}/7')
+        st.caption(f'Average period: {pd.Timestamp(end)-pd.Timedelta(days=6):%b %d}–{end:%b %d, %Y}.')
         st.write('**'+report['category']+'**')
         decision(report['action'])
         st.caption('Averages weight each measured day equally. Three days is a dashboard '
                    'display minimum, not a diagnostic protocol. Use two readings one minute '
                    'apart after five minutes seated rest. Daily averages can hide individual highs. '
                    'Medication timing and morning/evening readings are not available in this import.')
-        history=window(bp,end,28)
-        if not history.empty and {'systolic','diastolic'}.issubset(history):
-            st.plotly_chart(bp_figure(bp,end),use_container_width=True)
-            st.caption('Reference lines apply separately: either component may be elevated. Missing dates remain gaps.')
-            with st.expander('Recent blood-pressure readings'):
-                st.dataframe(history.sort_index(ascending=False),use_container_width=True)
+        weekly=bp_weekly_table(bp,end)
+        history=bp_daily_values(bp,end,28)
+        if weekly.Systolic.notna().any():
+            st.write('**Weekly averages · mmHg**')
+            def shade_column(values):
+                low,high=values.min(),values.max()
+                return ['' if pd.isna(v) else
+                        f'background-color: rgba(83, 125, 163, {0.08 if high==low else 0.08+0.22*(v-low)/(high-low):.2f})'
+                        for v in values]
+            styled=weekly.style.format({'Systolic':'{:.1f}','Diastolic':'{:.1f}'},na_rep='—')
+            styled=styled.apply(shade_column,subset=['Systolic','Diastolic'])
+            st.dataframe(styled,hide_index=True,use_container_width=True)
+            st.caption('Monday–Sunday weeks; a partial week stops at the selected date. '
+                       'Only measured days contribute. Shading compares values within each column; '
+                       'it does not indicate a clinical category. Either BP component can be elevated.')
+            with st.expander('Daily blood-pressure readings · last 28 days'):
+                readings=history.sort_index(ascending=False).rename(
+                    columns={'systolic':'Systolic (mmHg)','diastolic':'Diastolic (mmHg)'})
+                readings.index=readings.index.strftime('%b %d, %Y')
+                readings.index.name='Date'
+                st.dataframe(readings.style.format('{:.1f}'),use_container_width=True)
+            st.caption('Latest paired reading: '+str(history.index.max().date()) if not history.empty
+                       else 'No paired readings in the last 28 days.')
         elif not bp.empty:
             st.caption('Latest imported BP date: '+str(pd.Timestamp(bp.index.max()).date())+
                        '. No recent measurement is carried forward.')

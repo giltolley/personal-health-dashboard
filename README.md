@@ -50,8 +50,11 @@ Run `python -m unittest -v test_overview test_streamlit_v07_smoke` to check
 thresholds, sparse records, nutrition aggregation, and all five rendered sections.
 
 
-The Overview includes BP trends, activity progress, daily nutrient bars and
-separate weight/lift charts. Missing values remain gaps.
+The Overview shows a combined seven-day BP average and four calendar weeks of
+BP averages, with measured-day counts and expandable daily readings. Partial weeks
+stop at the selected end date; missing weeks stay blank. Column shading compares
+weekly values and does not represent clinical categories. It also includes activity
+progress, daily nutrient bars and separate weight/lift charts. Missing values remain gaps.
 
 ## Saved goals and phase history
 
